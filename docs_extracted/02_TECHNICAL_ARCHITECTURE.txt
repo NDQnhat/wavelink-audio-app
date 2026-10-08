@@ -1,0 +1,23 @@
+02. TECHNICAL ARCHITECTURE & RESOURCE CONSTRAINTS
+Kiến Trúc Kỹ Thuật & Tối Ưu Hóa Máy Chủ Tài Nguyên Yếu
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Ràng Buộc Phần Cứng Máy Chủ (Budget VPS Constraints)
+2. Bảng Phân Bổ Ngân Sách Bộ Nhớ RAM (RAM Budget Allocation)
+3. Thiết Kế Backend Golang Modular Monolith
+Mã nguồn Backend tổ chức theo cấu trúc module rõ ràng, biên dịch thành một file binary duy nhất (< 20MB):
+
+--- TABLE 1 ---
+[FACT] Giả định tài nguyên phần cứng thực tế: 1 vCPU, 1024MB RAM vật lý, 25GB SSD, băng thông mạng hạn chế. Không được phép triển khai các thành phần nặng như Redis, Kafka, RabbitMQ, Elasticsearch hay cụm Kubernetes.
+
+--- TABLE 2 ---
+Tiến trình / Dịch vụ | Mức RAM tối đa | Tỷ lệ % | Cơ chế kiểm soát & cô lập
+Linux Kernel & OS Core | 120 MB | 12.0% | Loại bỏ snapd, ModemManager, giảm tải daemon
+MySQL 8.x Database | 320 MB | 31.2% | innodb_buffer_pool_size=256M, max_connections=40
+Golang Backend API | 50 MB | 4.9% | GOMEMLIMIT=45MiB, GOGC=80, connection pool = 15
+Nginx Reverse Proxy | 25 MB | 2.4% | worker_processes 1, worker_connections 512
+Temporary Workspace / Buffer | 150 MB | 14.6% | Giới hạn dung lượng tối đa cho file tạm
+Linux OS Page Cache / Free | 359 MB | 34.9% | Bộ đệm I/O của hệ điều hành, chống nghẽn đĩa
+TỔNG CỘNG HỆ THỐNG | 1,024 MB | 100% | Kích hoạt 1GB Swap (vm.swappiness=10) an toàn
+
+--- TABLE 3 ---
+backend/ ├── cmd/server/main.go          # Khởi tạo config, database, chi router, graceful shutdown ├── internal/ │   ├── session/                # Quản lý listening session & vòng đời URL │   ├── progress/               # Xử lý đồng bộ vị trí nghe mỗi 60 giây (UPSERT logic) │   ├── youtube/                # Validate YouTube URL, Regex parsing, trích xuất Video ID │   ├── auth/                   # Quản lý tài khoản User & Guest Session Token │   └── platform/ │       ├── database/           # sql.DB connection pool tối ưu cho máy chủ yếu │       └── response/           # JSON envelope chuẩn hóa {success, data, error} └── migrations/                 # DDL migrations cho MySQL

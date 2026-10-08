@@ -1,0 +1,174 @@
+{
+  "systemStats": {
+    "totalAudios": 128,
+    "totalEpisodes": 892,
+    "totalCategories": 12,
+    "totalTags": 84,
+    "totalAuthors": 46,
+    "listeningCount": 3,
+    "completedCount": 12,
+    "totalHoursListened": 142
+  },
+  "categories": [
+    { "id": 1, "name": "Tiên hiệp", "slug": "tien-hiep", "color": "primary", "count": 42 },
+    { "id": 2, "name": "Huyền huyễn", "slug": "huyen-huyen", "color": "secondary", "count": 28 },
+    { "id": 3, "name": "Kiếm hiệp", "slug": "kiem-hiep", "color": "tertiary", "count": 19 },
+    { "id": 4, "name": "Đô thị", "slug": "do-thi", "color": "primary", "count": 15 },
+    { "id": 5, "name": "Khoa huyễn", "slug": "khoa-huyen", "color": "secondary", "count": 12 },
+    { "id": 6, "name": "Lịch sử quân sự", "slug": "lich-su", "color": "tertiary", "count": 8 },
+    { "id": 7, "name": "Podcast & Đàm luận", "slug": "podcast", "color": "primary", "count": 24 },
+    { "id": 8, "name": "Sách nói kỹ năng", "slug": "sach-noi", "color": "secondary", "count": 16 }
+  ],
+  "tags": [
+    { "id": 1, "name": "Tu tiên", "slug": "tu-tien", "count": 34 },
+    { "id": 2, "name": "Audio dài", "slug": "audio-dai", "count": 56 },
+    { "id": 3, "name": "Trọn bộ", "slug": "tron-bo", "count": 48 },
+    { "id": 4, "name": "Bạch Ngọc Sách", "slug": "bach-ngoc-sach", "count": 19 },
+    { "id": 5, "name": "Audiobook", "slug": "audiobook", "count": 62 },
+    { "id": 6, "name": "Đông Nam Á", "slug": "dong-nam-a", "count": 5 },
+    { "id": 7, "name": "Trọng sinh", "slug": "trong-sinh", "count": 27 },
+    { "id": 8, "name": "Hài hước", "slug": "hai-huoc", "count": 14 }
+  ],
+  "audios": [
+    {
+      "id": 1,
+      "youtubeVideoId": "dQw4w9WgXcQ",
+      "youtubeUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "title": "Phàm Nhân Tu Tiên",
+      "author": "Vong Ngữ",
+      "channel": "Bạch Ngọc Sách",
+      "categoryId": 1,
+      "categoryName": "Tiên hiệp",
+      "tags": ["Tu tiên", "Audio dài", "Trọn bộ"],
+      "thumbnailUrl": "https://lh3.googleusercontent.com/aida-public/AB6AXuBsc9xvd6tV0zpr_tqfoErqaihhn712uBlsrjyXM4Ku8RXBfjrQAsx0LMKka5DToIVwm_MUIXWrq-ey-pc-MxAz26lg-Gq00lIjkyHAPr2VnqoUX56o6pcujFcSTKTNwGtI9ubj00GijZIl_Hce7Papwcmyphl2u9pvdJKBqD3V4Upxuogx5FwY5aMf-z902H4Pt8iwU6IAUf4rx8KmmB5XHfc1g-nB3NhtdiOHPPwR8y7l-UgEu1G0zQ",
+      "totalDurationSeconds": 99480,
+      "formattedDuration": "27h 38m",
+      "totalEpisodes": 7,
+      "status": "PLAYING",
+      "currentEpisodeNumber": 3,
+      "currentEpisodeTitle": "Tập 3: Luyện Đan Nhập Đạo",
+      "lastPositionSeconds": 5561,
+      "formattedPosition": "01:32:41",
+      "progressPercent": 44,
+      "isFavorite": true,
+      "episodes": [
+        { "id": 101, "episodeNumber": 1, "title": "Tập 1: Khởi Đầu Sơn Thôn", "startSeconds": 0, "endSeconds": 14400, "duration": 14400, "completed": true, "progressPercent": 100 },
+        { "id": 102, "episodeNumber": 2, "title": "Tập 2: Thất Huyền Môn Bí Mật", "startSeconds": 14400, "endSeconds": 28800, "duration": 14400, "completed": true, "progressPercent": 100 },
+        { "id": 103, "episodeNumber": 3, "title": "Tập 3: Luyện Đan Nhập Đạo", "startSeconds": 28800, "endSeconds": 43200, "duration": 14400, "completed": false, "progressPercent": 44 },
+        { "id": 104, "episodeNumber": 4, "title": "Tập 4: Thăng Tiên Lệnh Xuất Thế", "startSeconds": 43200, "endSeconds": 57600, "duration": 14400, "completed": false, "progressPercent": 0 },
+        { "id": 105, "episodeNumber": 5, "title": "Tập 5: Hoàng Phong Cốc Nhập Môn", "startSeconds": 57600, "endSeconds": 72000, "duration": 14400, "completed": false, "progressPercent": 0 },
+        { "id": 106, "episodeNumber": 6, "title": "Tập 6: Huyết Sắc Thí Luyện", "startSeconds": 72000, "endSeconds": 86400, "duration": 14400, "completed": false, "progressPercent": 0 },
+        { "id": 107, "episodeNumber": 7, "title": "Tập 7: Trúc Cơ Thành Công (Hết Phần 1)", "startSeconds": 86400, "endSeconds": 99480, "duration": 13080, "completed": false, "progressPercent": 0 }
+      ]
+    },
+    {
+      "id": 2,
+      "youtubeVideoId": "k3_tw44QsZQ",
+      "youtubeUrl": "https://www.youtube.com/watch?v=k3_tw44QsZQ",
+      "title": "Đại Phụng Đả Canh Nhân",
+      "author": "Mại Báo Tiểu Lang Quân",
+      "channel": "Giọng Đọc Audio Hay",
+      "categoryId": 1,
+      "categoryName": "Tiên hiệp",
+      "tags": ["Trọng sinh", "Hài hước", "Trinh thám"],
+      "thumbnailUrl": "https://lh3.googleusercontent.com/aida-public/AB6AXuCtQQdvs51YIsbeiJDc9L-wYeb0JdGbYKY69-lyEI9MMigmkGtmi4nmgQGAyCxOudkkq_KImIM3NOHpcmJFRyudOxHIGEUHlBC0948sRBY5g1g6f2szJzSr-KAJxtZXK-riWDnbutCfYQfY-TqnE1j3ByDCXwiZ5i07SQ0d28FxuLXC3MXNoDyJHFaAIJLaIwv-6sHvMmPg_d_nqLD24_xbME9Isyz1PQ1XFE_eItwdbZn_mMPKrFbZmw",
+      "totalDurationSeconds": 144000,
+      "formattedDuration": "40h 00m",
+      "totalEpisodes": 10,
+      "status": "PLAYING",
+      "currentEpisodeNumber": 18,
+      "currentEpisodeTitle": "Tập 18: Thần Thám Hứa Thất An",
+      "lastPositionSeconds": 11200,
+      "formattedPosition": "03:06:40",
+      "progressPercent": 78,
+      "isFavorite": true,
+      "episodes": [
+        { "id": 201, "episodeNumber": 1, "title": "Tập 1: Thuế Ngân Kỳ Án", "startSeconds": 0, "endSeconds": 14400, "duration": 14400, "completed": true, "progressPercent": 100 },
+        { "id": 202, "episodeNumber": 2, "title": "Tập 2: Đả Canh Ty Nhập Môn", "startSeconds": 14400, "endSeconds": 28800, "duration": 14400, "completed": true, "progressPercent": 100 },
+        { "id": 203, "episodeNumber": 3, "title": "Tập 3: Luyện Kim Thuật Sĩ Trợ Giúp", "startSeconds": 28800, "endSeconds": 43200, "duration": 14400, "completed": false, "progressPercent": 78 }
+      ]
+    },
+    {
+      "id": 3,
+      "youtubeVideoId": "L_LUpnjgPso",
+      "youtubeUrl": "https://www.youtube.com/watch?v=L_LUpnjgPso",
+      "title": "Tri Thức Vô Tận - Lịch Sử Đông Nam Á",
+      "author": "Tri Thức Radio",
+      "channel": "Podcast Tri Thức",
+      "categoryId": 7,
+      "categoryName": "Podcast & Đàm luận",
+      "tags": ["Podcast", "Đông Nam Á", "Lịch sử"],
+      "thumbnailUrl": "https://lh3.googleusercontent.com/aida-public/AB6AXuCkeSHMC596Quel0ouoE4rfRrxEzhuZwKjiPYjR2O1cAh5aeIplml1EWCbBcUvw07f2bcMny8KRDO4Fw458DrUK1S6TPcOVb9uRcOVV8eEWGLyK8Kw9rIyP9YW8SbYH5-RKF2BS03vwBMtel3QHoxRTSdrCjQzB6Wl5GifsYilJnx43zOxtTZwIop96KLzcAvZWszUdiWIGpyaJKFpc4IgsYa1ek8SDcqeAOxP5KrcdKEAu3dNlWwfJ0w",
+      "totalDurationSeconds": 14400,
+      "formattedDuration": "04h 00m",
+      "totalEpisodes": 1,
+      "status": "PLAYING",
+      "currentEpisodeNumber": 1,
+      "currentEpisodeTitle": "Số 42: Dòng Chảy Lịch Sử Vùng Biển Đảo",
+      "lastPositionSeconds": 4608,
+      "formattedPosition": "01:16:48",
+      "progressPercent": 32,
+      "isFavorite": false,
+      "episodes": [
+        { "id": 301, "episodeNumber": 1, "title": "Số 42: Dòng Chảy Lịch Sử Vùng Biển Đảo", "startSeconds": 0, "endSeconds": 14400, "duration": 14400, "completed": false, "progressPercent": 32 }
+      ]
+    },
+    {
+      "id": 4,
+      "youtubeVideoId": "fJ9rUzIMcZQ",
+      "youtubeUrl": "https://www.youtube.com/watch?v=fJ9rUzIMcZQ",
+      "title": "Kiếm Lai - Quyển 04",
+      "author": "Phong Hỏa Hí Chư Hầu",
+      "channel": "Giọng Đọc Audio Hay",
+      "categoryId": 1,
+      "categoryName": "Tiên hiệp",
+      "tags": ["Tu tiên", "Audio dài"],
+      "thumbnailUrl": "https://lh3.googleusercontent.com/aida-public/AB6AXuCHdF7DUTNicSVIQslxTN5tsd-kDuYrVB-QAu4O-1YKig4YIxKsvyZ8rChJ07FgREo95cJthoeofaawJjknihiKgIt1L5SqwgizpD4coyBbACzMKiaWupecSZfJbeIq8-dFxsXahkfGxNQOzSpynrRhdq0eTFV5pKzQ-xsLdGSchhVPFQotNNIWuh4StJh1CG5PSxnK6Vn04tuJgoBAlXmRwVTJe-6-k7RbuPGT2fvZ_CB3bWPHcFokJA",
+      "totalDurationSeconds": 57600,
+      "formattedDuration": "16h 00m",
+      "totalEpisodes": 4,
+      "status": "COMPLETED",
+      "currentEpisodeNumber": 4,
+      "currentEpisodeTitle": "Tập 4: Trần Bình An Hạ Sơn",
+      "lastPositionSeconds": 14400,
+      "formattedPosition": "04:00:00",
+      "progressPercent": 95,
+      "isFavorite": true,
+      "episodes": [
+        { "id": 401, "episodeNumber": 1, "title": "Tập 1: Ly Khai Ly Châu Động Thiên", "startSeconds": 0, "endSeconds": 14400, "duration": 14400, "completed": true, "progressPercent": 100 },
+        { "id": 402, "episodeNumber": 2, "title": "Tập 2: Đại Tuyết Phong Hầu", "startSeconds": 14400, "endSeconds": 28800, "duration": 14400, "completed": true, "progressPercent": 100 },
+        { "id": 403, "episodeNumber": 3, "title": "Tập 3: Sông Núi Hữu Tình", "startSeconds": 28800, "endSeconds": 43200, "duration": 14400, "completed": true, "progressPercent": 100 },
+        { "id": 404, "episodeNumber": 4, "title": "Tập 4: Trần Bình An Hạ Sơn", "startSeconds": 43200, "endSeconds": 57600, "duration": 14400, "completed": true, "progressPercent": 95 }
+      ]
+    }
+  ],
+  "recentHistory": [
+    {
+      "id": 1,
+      "audioTitle": "Đại Phụng Đả Canh Nhân",
+      "episodeTitle": "Tập 18 • Mại Báo Tiểu Lang Quân",
+      "timeAgo": "Hôm nay, 14:20",
+      "progressPercent": 78,
+      "icon": "music_note",
+      "color": "primary"
+    },
+    {
+      "id": 2,
+      "audioTitle": "Tri Thức Vô Tận - Số 42",
+      "episodeTitle": "Chủ đề: Lịch sử Đông Nam Á",
+      "timeAgo": "Hôm qua, 21:05",
+      "progressPercent": 32,
+      "icon": "mic",
+      "color": "secondary"
+    },
+    {
+      "id": 3,
+      "audioTitle": "Kiếm Lai - Quyển 04",
+      "episodeTitle": "Tập 12 • Phong Hỏa Hí Chư Hầu",
+      "timeAgo": "20 Thg 10",
+      "progressPercent": 95,
+      "icon": "menu_book",
+      "color": "tertiary"
+    }
+  ]
+}

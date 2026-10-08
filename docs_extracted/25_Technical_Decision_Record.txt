@@ -1,0 +1,15 @@
+25. TECHNICAL DECISION RECORD (TDR)
+Biên Bản Quyết Định Kỹ Thuật (Architecture Decision Records)
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Quyết Định Kỹ Thuật 1: Cơ Sở Dữ Liệu (MySQL vs PostgreSQL)
+• Vấn đề: Lựa chọn cơ sở dữ liệu quan hệ cho máy chủ 1GB RAM.
+• Quyết định: Bắt buộc chọn MySQL 8.x InnoDB.
+• Lý do kỹ thuật: MySQL 8.x InnoDB cho phép tinh chỉnh footprint bộ nhớ RAM xuống mức rất thấp (~200MB - 300MB) rất ổn định, truy vấn index cơ bản cực nhẹ, hỗ trợ utf8mb4 hoàn hảo, và là ràng buộc công nghệ bắt buộc từ thiết kế ban đầu.
+2. Quyết Định Kỹ Thuật 2: Nơi Lưu Trữ Audio (Local Disk vs Cloudflare R2)
+• Vấn đề: Lưu tệp MP3 ở đâu với chi phí thấp và server yếu?
+• Quyết định: Giai đoạn MVP lưu trữ tại Local NVMe Disk (/data/audio/) và sao lưu đồng bộ ra Cloudflare R2.
+• Lý do kỹ thuật: Local disk cho tốc độ I/O nhanh nhất, không tốn băng thông internet gọi S3 API, kết hợp Nginx sendfile zero-copy đem lại hiệu năng phát nhạc tối đa trên VPS nhỏ. Khi vượt ngưỡng dung lượng đĩa, chỉ cần chuyển đường dẫn sang R2 mà không sửa đổi logic ứng dụng.
+3. Quyết Định Kỹ Thuật 3: Hàng Đợi Xử Lý Job (MySQL Job Table vs Redis/RabbitMQ)
+• Vấn đề: Cần hàng đợi điều phối FFmpeg mà không tiêu tốn RAM.
+• Quyết định: Sử dụng bảng MySQL `processing_jobs` kết hợp Worker Go đơn luồng polling.
+• Lý do kỹ thuật: Loại bỏ hoàn toàn sự cần thiết của Redis (tiết kiệm 50MB RAM) hoặc RabbitMQ (tiết kiệm 200MB RAM Erlang VM). Với tần suất upload vài chục file/ngày của một hệ thống MVP, bảng MySQL đáp ứng hoàn toàn tin cậy và không bao giờ mất job khi server khởi động lại.

@@ -1,0 +1,16 @@
+09. PROGRESS & HISTORY SYNCHRONIZATION
+Thiết Kế Đồng Bộ Tiến Trình 60 Giây & Quản Lý Lịch Sử Nghe
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Phân Biệt Tiến Trình (Progress) vs Lịch Sử (History)
+2. Chu Kỳ Đồng Bộ Tiến Trình 60 Giây & Resilience
+Chiến lược đồng bộ hóa nhiều tầng (Multi-tier Sync Strategy):
+• Định kỳ: Khi Player ở trạng thái PLAYING, Timer Client kích hoạt PUT /api/v1/progress sau mỗi 60 giây.
+• Sự kiện tức thời: Kích hoạt ngay khi người dùng nhấn PAUSE, kết thúc bài (ENDED), hoặc chuyển tab (document.visibilitychange).
+• Khôi phục ngoại tuyến: Nếu mất mạng, lưu position vào localStorage và tự động đồng bộ lại khi online.
+
+--- TABLE 1 ---
+Thuộc tính | Listening Progress (Tiến trình) | Listening History (Lịch sử)
+Mục đích | Đang nghe tới đâu để Resume chính xác | Đã nghe những nội dung gì, khi nào
+Số lượng bản ghi | DUY NHẤT 1 bản ghi / (user_id, episode_id) | Nhiều bản ghi theo thời gian thực (Append-only)
+Hành vi DB | UPSERT (INSERT ... ON DUPLICATE KEY UPDATE) | INSERT bản ghi mới sau khi nghe > 30s
+Dữ liệu lưu | position_seconds, progress_percent, completed | started_at, ended_at, duration_listened

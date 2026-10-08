@@ -1,0 +1,22 @@
+12. AUTHENTICATION & AUTHORIZATION
+Cơ Chế Xác Thực, Phân Quyền & Quản Lý Phiên Làm Việc
+―――――――――――――――――――――――――――――――――――――――――――――
+1. So Sánh Mô Hình: JWT vs HttpOnly Cookie Session
+2. Thiết Lập CORS Chuẩn Cho Môi Trường Phân Tách Domain
+Do Frontend (https://example.com) và Backend API (https://api.example.com) khác origin, Nginx và Go backend phải cấu hình CORS nghiêm ngặt:
+
+--- TABLE 1 ---
+Tiêu chí so sánh | Mô hình Token trong LocalStorage | Mô hình HttpOnly Cookie (KHUYẾN NGHỊ) | Mô hình State Session DB
+Nguy cơ XSS | Rất cao: Script độc hại đọc được Token | Rất an toàn: JavaScript không thể truy cập | Rất an toàn: Cookie HttpOnly
+Nguy cơ CSRF | Không bị ảnh hưởng trực tiếp | Cần phòng ngừa qua SameSite=Lax/Strict | Cần phòng ngừa SameSite=Strict
+Tiêu tốn RAM VPS | 0 byte RAM (Stateless verify chữ ký) | 0 byte RAM (JWT trong cookie) | Tốn RAM query bảng sessions hoặc Redis
+Độ phù hợp VPS yếu | Trung bình (Rủi ro bảo mật) | Tối ưu nhất: Bảo mật cao + 0% tải RAM | Kém: Tăng tải truy vấn MySQL
+
+--- TABLE 2 ---
+[RECOMMENDATION] KHUYẾN NGHỊ CUỐI CÙNG: Áp dụng cơ chế lai (Hybrid Token via Cookie): Access Token (thời hạn 15 phút) và Refresh Token (thời hạn 7 ngày) được lưu trong HttpOnly, Secure, SameSite=Lax Cookie. Frontend không cần lưu trữ token trong LocalStorage, loại trừ 100% rủi ro đánh cắp token qua XSS.
+
+--- TABLE 3 ---
+Access-Control-Allow-Origin: https://example.com Access-Control-Allow-Credentials: true Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS Access-Control-Allow-Headers: Content-Type, Authorization, Range, X-Requested-With Access-Control-Max-Age: 86400
+
+--- TABLE 4 ---
+[WARNING] TUYỆT ĐỐI KHÔNG SỬ DỤNG Access-Control-Allow-Origin: * khi Access-Control-Allow-Credentials: true. Đây là lỗi cấu hình bảo mật nghiêm trọng và bị trình duyệt chặn hoàn toàn theo chuẩn W3C/MDN.

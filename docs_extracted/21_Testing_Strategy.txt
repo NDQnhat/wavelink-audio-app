@@ -1,0 +1,15 @@
+21. TESTING & QUALITY ASSURANCE STRATEGY
+Chiến Lược Kiểm Thử Phần Mềm, Tải Băng Thông & Tự Động Hóa
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Kim Tự Tháp Kiểm Thử (Testing Pyramid)
+• Unit Tests (Backend Go): Kiểm thử các business logic độc lập trong tầng Service, tính toán hash mật khẩu, phân tích JWT và sanitize dữ liệu đầu vào. Mục tiêu độ phủ > 75%.
+• Integration Tests (Database & Handler): Kiểm thử giao dịch MySQL qua mock hoặc test database SQLite/MySQL test container, xác minh đúng đắn của các câu lệnh JOIN, transaction rollbacks.
+• Media Processing Test: Kiểm thử chức năng FFmpeg với các tệp âm thanh mẫu (WAV, FLAC, corrupt MP3) để đảm bảo không xảy ra treo luồng vô hạn.
+• End-to-End & Load Testing: Sử dụng công cụ nhẹ như k6 / wrk để giả lập 50 - 200 kết nối đồng thời nghe nhạc và gọi API.
+2. Kịch Bản Kiểm Thử Tải (Load Testing Benchmark)
+
+--- TABLE 1 ---
+Kịch bản test | Công cụ thực thi | Ngưỡng chấp nhận (Pass Criteria) | Chỉ số thất bại (Fail Criteria)
+Stress Test API Endpoint /audios | k6 (100 VUs / 5 phút) | p95 latency < 50ms, 0% lỗi 5xx | Latency > 200ms hoặc xuất hiện HTTP 500/502
+Stream Partial Content HTTP 206 | curl Range request | Đúng mã 206, Content-Range byte chính xác | Trả về mã 200 nguyên khối (Full download)
+OOM Test FFmpeg Concurrency | 2 file upload đồng thời | Job 2 xếp hàng QUEUED, RAM không tăng đột biến | 2 tiến trình FFmpeg chạy cùng lúc, RAM vọt > 500MB

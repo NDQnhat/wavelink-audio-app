@@ -1,0 +1,19 @@
+10. AUDIO STREAMING ARCHITECTURE
+Kiến Trúc Phát Trực Tuyến & Cơ Chế Phục Vụ HTTP 206 Partial Content
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Bản Chất Giao Thức HTTP Range Request
+Trình duyệt khi phát tệp âm thanh HTML5 <audio> không tải về toàn bộ tệp ngay lập tức mà gửi yêu cầu từng phần thông qua header Range: bytes=start-end. Server phản hồi mã trạng thái 206 Partial Content với các header bắt buộc:
+• Accept-Ranges: bytes
+• Content-Range: bytes 0-1048575/5242880 (Khoảng byte đang trả / Tổng kích thước tệp)
+• Content-Length: 1048576 (Số byte trong chunk hiện tại)
+• Content-Type: audio/mpeg
+2. Phân Tích Các Mô Hình Phục Vụ Streaming
+
+--- TABLE 1 ---
+Phương án thiết kế | Mô tả cơ chế | Ưu điểm | Nhược điểm / Đánh giá VPS yếu
+Option A: Go Streaming | Go mở tệp đĩa, tự parse Range và ghi io.Copy ra ResponseWriter | Kiểm soát quyền truy cập chặt chẽ từng byte | Tốn Goroutine, bộ đệm RAM Go phình to khi nhiều listener đồng thời
+Option B: Nginx Direct Serving | Nginx trực tiếp phục vụ tệp MP3 qua static block | Hiệu năng cực cao nhờ sendfile(2) của Linux kernel, 0% Go RAM | Không thể kiểm tra authentication/token người dùng trước khi stream
+Option C: Nginx X-Accel-Redirect (KHUYẾN NGHỊ) | Go xác thực quyền, nếu hợp lệ trả header X-Accel-Redirect: /internal_media/file.mp3 | Vừa bảo mật xác thực trong Go, vừa tận dụng zero-copy sendfile của Nginx | Giải pháp tối thượng: Bảo vệ nội dung và giải phóng hoàn toàn Go process
+
+--- TABLE 2 ---
+[RECOMMENDATION] QUYẾT ĐỊNH KIẾN TRÚC: Lựa chọn Option C (Nginx X-Accel-Redirect) kết hợp với Option B (Static Direct cho public audio có cache). Cơ chế này giúp server 1GB RAM có thể phục vụ đồng thời hàng trăm người nghe mà không làm tăng tải RAM của ứng dụng Go.

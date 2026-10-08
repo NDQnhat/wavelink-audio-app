@@ -1,0 +1,13 @@
+11. LOW-RESOURCE SERVER DEPLOYMENT
+Triển Khai Hạ Tầng Máy Chủ Yếu (1 vCPU, 1GB RAM) Native Systemd & Nginx
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Cấu Hình Phân Bổ RAM Thực Tế VPS 1GB
+
+--- TABLE 1 ---
+Thành phần | RAM cấp phát | Tỷ lệ % | Cơ chế khống chế
+Linux OS & Kernel | 120 MB | 12.0% | Tắt dịch vụ thừa
+MySQL 8.x | 320 MB | 31.2% | innodb_buffer_pool_size=256M, max_connections=40
+Go Backend API | 50 MB | 4.9% | GOMEMLIMIT=45MiB, Single Binary
+Nginx Reverse Proxy | 25 MB | 2.4% | worker_processes 1
+OS Buffer / Page Cache | 509 MB | 49.5% | Bộ đệm I/O Linux kernel cực kỳ dồi dào
+TỔNG CỘNG | 1,024 MB | 100% | Swap ZRAM 1GB an toàn phòng chống OOM

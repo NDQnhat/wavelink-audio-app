@@ -1,0 +1,17 @@
+09. AUDIO MEDIA PIPELINE SPECIFICATION
+Quy Trình Tiếp Nhận, Kiểm Thử & Chuyển Mã Media Bằng FFmpeg
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Thách Thức Kỹ Thuật Khi Xử Lý Media Trên Server Yếu
+FFmpeg là công cụ xử lý đa phương tiện rất mạnh nhưng có thể chiếm dụng 100% tài nguyên CPU đa nhân và hàng trăm Megabytes RAM nếu mã hóa tập tin chất lượng cao hoặc xử lý nhiều tệp song song.
+2. Sơ Đồ Quy Trình Pipeline Chuyển Mã
+3. Thông Số Dòng Lệnh FFmpeg Chuẩn Hóa
+Dòng lệnh thực thi FFmpeg chuẩn hóa được đóng gói bảo mật không qua shell:
+
+--- TABLE 1 ---
+[WARNING] QUY TẮC CẤP THIẾT: Tuyệt đối không bao giờ thực thi FFmpeg đồng bộ (synchronous) ngay trong HTTP Request context! Mọi thao tác chuyển mã phải được đưa vào hàng đợi xử lý nền (Background Job Worker) với số lượng luồng thực thi đồng thời MAX_WORKERS = 1.
+
+--- TABLE 2 ---
+Admin Upload File (WAV/FLAC/MP3)        │        ▼ (1) Lưu file tạm vào /data/audio/tmp/{uuid}.upload [ Go API Handler ]        │        ▼ (2) Kiểm tra MIME, File Signature & trích xuất metadata [ FFprobe Inspector ] ──(Lỗi định dạng)──► Trả về lỗi 422 Unprocessable Entity        │        ▼ (3) Ghi bản ghi vào bảng `processing_jobs` (Status = 'QUEUED') [ MySQL DB ]        │        ▼ (4) Go Worker nền claim job (Status = 'RUNNING') [ Background Worker (Worker Pool = 1) ]        │        ▼ (5) Gọi FFmpeg với tham số giới hạn luồng và CPU [ FFmpeg Transcoder ] (exec.CommandContext với timeout 120s, -threads 1, nice 19)        │        ├──► Tạo MP3 CBR 192kbps chuẩn hóa tại /data/audio/processed/{uuid}.mp3        ├──► Trích xuất ảnh bìa Artwork nếu có sang /data/audio/covers/{uuid}.jpg        │        ▼ (6) Cập nhật trạng thái Job = 'COMPLETED', Audio Status = 'PUBLISHED' [ MySQL Database ]
+
+--- TABLE 3 ---
+# Chuyển đổi an toàn, giới hạn 1 thread, độ ưu tiên CPU thấp ffmpeg -y -hide_banner -loglevel error   -threads 1   -i /data/audio/tmp/input.wav   -vn -c:a libmp3lame -b:a 192k -ar 44100 -ac 2   /data/audio/processed/output.mp3

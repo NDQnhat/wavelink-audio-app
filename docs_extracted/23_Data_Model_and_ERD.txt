@@ -1,0 +1,13 @@
+23. DATA MODEL & DETAILED ERD SPECIFICATION
+Chi Tiết Mô Hình Dữ Liệu Thực Thể & Định Nghĩa Schema SQL
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Danh Sách 16 Bảng Thực Thể Chuẩn Hóa
+Hệ thống loại bỏ hoàn toàn các bảng dư thừa, chuẩn hóa về 16 bảng cốt lõi:
+1. users, 2. roles, 3. permissions, 4. user_roles, 5. role_permissions
+6. audios, 7. artists, 8. albums, 9. genres, 10. tags, 11. audio_tags
+12. playlists, 13. playlist_items, 14. favorites, 15. listening_history
+16. processing_jobs, 17. audit_logs
+2. Schema SQL MySQL 8.x DDL Chuẩn
+
+--- TABLE 1 ---
+CREATE TABLE IF NOT EXISTS users (     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,     username VARCHAR(50) NOT NULL UNIQUE,     email VARCHAR(100) NOT NULL UNIQUE,     password_hash VARCHAR(255) NOT NULL,     avatar_url VARCHAR(255) NULL,     status ENUM('ACTIVE', 'SUSPENDED', 'PENDING') DEFAULT 'ACTIVE',     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;  CREATE TABLE IF NOT EXISTS audios (     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,     title VARCHAR(150) NOT NULL,     artist_id INT UNSIGNED NULL,     album_id INT UNSIGNED NULL,     genre_id INT UNSIGNED NULL,     duration INT UNSIGNED NOT NULL DEFAULT 0, -- Thời lượng tính theo giây     file_path VARCHAR(255) NOT NULL,         -- /data/audio/processed/{uuid}.mp3     cover_path VARCHAR(255) NULL,            -- /data/audio/covers/{uuid}.jpg     file_size BIGINT UNSIGNED NOT NULL DEFAULT 0,     bitrate INT UNSIGNED NOT NULL DEFAULT 192000,     status ENUM('DRAFT', 'PROCESSING', 'PUBLISHED', 'UNPUBLISHED') DEFAULT 'DRAFT',     play_count BIGINT UNSIGNED DEFAULT 0,     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,     FULLTEXT INDEX idx_ft_title (title) ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;  CREATE TABLE IF NOT EXISTS processing_jobs (     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,     audio_id INT UNSIGNED NOT NULL,     input_file_path VARCHAR(255) NOT NULL,     status ENUM('QUEUED', 'RUNNING', 'COMPLETED', 'FAILED') DEFAULT 'QUEUED',     error_message TEXT NULL,     attempt_count TINYINT UNSIGNED DEFAULT 0,     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,     INDEX idx_job_status (status) ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

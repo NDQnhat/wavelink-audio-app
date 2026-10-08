@@ -1,0 +1,24 @@
+01. SYSTEM OVERVIEW & ARCHITECTURAL EVOLUTION
+Tổng Quan Hệ Thống YouTube Audio Library & Mở Rộng Kiến Trúc
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Tiến Hóa Mục Tiêu & Phạm Vi Sản Phẩm (Product Evolution)
+Hệ thống đã nâng cấp từ mô hình nghe nhạc tạm thời theo phiên (URL -> Session -> Temporary Audio) thành một nền tảng THƯ VIỆN ÂM THANH YOUTUBE HOÀN CHỈNH (YouTube Audio Library Platform). Người dùng có thể nhập URL YouTube, hệ thống trích xuất metadata, phân loại Category/Genre, gán Tags, quản lý danh mục trong Audio Library, tự động chia nhỏ các video siêu dài (> 24 giờ) thành các Episode/Segment logic, tìm kiếm/lọc đa tiêu chí, đồng bộ tiến trình nghe và lưu trữ lịch sử nghe cá nhân.
+2. Hành Trình Người Dùng Toàn Diện (End-to-End User Journey)
+• Bước 1 - Nhập & Nhận dạng: Người dùng dán URL YouTube tại trang Library -> Go Backend xác thực URL, tách Video ID (11 ký tự), kiểm tra trùng lặp (Duplicate Detection).
+• Bước 2 - Phân loại & Khởi tạo: Người dùng chọn Thể loại (Category) từ backend, nhập Tags bổ sung -> Hệ thống lấy metadata (Title, Author, Duration, Thumbnail) và lưu vào MySQL.
+• Bước 3 - Phân đoạn tự động: Nếu video dài > 24 giờ (hoặc theo cấu hình), hệ thống tự động sinh các Episode logic (4 giờ/tập) tương ứng.
+• Bước 4 - Duyệt & Tìm kiếm: Audio hiển thị trên thư viện với Card trực quan (Tiến trình %, Tập đang nghe dở, Thời lượng, Category). Hỗ trợ tìm kiếm FULLTEXT và lọc.
+• Bước 5 - Phát & Đồng bộ: Player phát nội dung thông qua YouTube IFrame Player API. Tiến trình tự động lưu mỗi 60 giây và khi đổi trạng thái.
+• Bước 6 - Lịch sử nghe: Ghi nhận nhật ký nghe vào listening_history phục vụ thống kê cá nhân.
+3. Bảng Phân Tích Hiện Trạng & Đề Xuất Thay Đổi
+
+--- TABLE 1 ---
+[FACT] ĐỊNH NGHĨA CỐT LÕI (MANDATORY DEFINITION): 1. KHÔNG PHẢI NỀN TẢNG HOSTING TỆP MP3: Hệ thống không tải về, không lưu trữ vĩnh viễn tệp âm thanh MP3 từ YouTube. 2. PHÂN BIỆT METADATA VÀ NỘI DUNG: Database chỉ lưu trữ Metadata, Danh mục, Tags, Phân đoạn tập (Logical Episodes), Tiến trình (Progress) và Lịch sử (History). 3. LOGICAL SEGMENTATION: Video 24h - 30h được chia thành các tập logic (mặc định 4 giờ/tập) dựa trên mốc thời gian (start_seconds, end_seconds). Không nhân bản tệp âm thanh vật lý.
+
+--- TABLE 2 ---
+Thành phần | Kiến trúc cũ (Session-based) | Kiến trúc mới (Library-based) | Lý do kỹ thuật & Ràng buộc
+Mô hình dữ liệu | Chỉ có 4 bảng tạm: session, progress | 9 bảng chuẩn hóa: audios, categories, tags, episodes, progress, history | Quản lý thư viện bền vững, phân loại sâu
+Xử lý video dài | Phát nguyên khối 1 video | Logical Episodes (mặc định block 4h) | Video > 24h không bị tràn seek bar, dễ quản lý
+Tìm kiếm & Lọc | Chỉ tìm kiếm đơn giản | Server-side Search & Multi-filter | Phân trang LIMIT/OFFSET, lọc Category/Author
+Tiến trình & Lịch sử | Chỉ lưu progress vị trí cuối | Tách biệt Progress (đang nghe) & History (đã nghe) | Phục vụ tính năng Resume tập và xem lại lịch sử
+Tài nguyên VPS | 1 vCPU, 1GB RAM | Duy trì 1 vCPU, 1GB RAM | Logical Segments 0MB đĩa, 0% CPU chuyển mã

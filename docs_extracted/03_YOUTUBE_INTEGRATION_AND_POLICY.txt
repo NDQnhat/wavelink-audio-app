@@ -1,0 +1,22 @@
+03. YOUTUBE INTEGRATION & POLICY RESEARCH
+Nghiên Cứu Tích Hợp YouTube, Phân Tích IFrame API & Ràng Buộc Pháp Lý
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Phân Tích Pháp Lý & Điều Khoản YouTube (Terms of Service)
+2. So Sánh Hai Kiến Trúc: IFrame Player API vs Backend Audio Processing
+3. Thuật Toán Trích Xuất & Chuẩn Hóa YouTube Video ID Trong Go
+Backend thực hiện phân tích và khử độc URL nghiêm ngặt bằng biểu thức chính quy (Regex):
+
+--- TABLE 1 ---
+[POLICY LIMITATION] ĐIỀU KHOẢN PHÁP LÝ BẮT BUỘC (YouTube Terms of Service Mục II.1 & Developer Policies Mục III.E): 1. Nghiêm cấm trích xuất stream (stream-ripping), tải lậu video hoặc tách riêng luồng âm thanh khỏi hình ảnh để phân phối lại mà không có sự cho phép trước bằng văn bản. 2. Nghiêm cấm can thiệp, bypass các cơ chế DRM, Access Control, hoặc giới hạn kỹ thuật của YouTube. 3. Phương thức được YouTube chính thức hỗ trợ và cấp phép để phát nội dung trên web của bên thứ ba là: YouTube IFrame Player API.
+
+--- TABLE 2 ---
+Tiêu chí so sánh | Kiến trúc A: YouTube IFrame Player API (KHUYẾN NGHỊ) | Kiến trúc B: Backend Media Conversion
+Tính hợp pháp & Policy | 100% Hợp lệ theo chính sách của Google / YouTube | Vi phạm nghiêm trọng YouTube ToS, nguy cơ bị chặn IP/kiện
+Tải CPU & RAM Server | GẦN NHƯ BẰNG 0 (YouTube gánh toàn bộ tải streaming) | RẤT CAO: FFmpeg chiếm 100% CPU 1 core, dễ tràn RAM
+Băng thông Server (Bandwidth) | 0 Mbps (Trình duyệt tải trực tiếp từ CDN của Google) | Hàng chục Mbps (Server phải stream audio cho Client)
+Độ trễ bắt đầu phát (Latency) | < 500ms (Phát ngay lập tức sau khi nạp Player) | > 5 - 15 giây (Thời gian chờ tải và convert)
+Trải nghiệm Audio UI | Có thể tùy biến Audio-centric UI che video phía sau | Xây dựng thẻ <audio> thuần túy hoàn toàn
+Độ phức tạp bảo trì | Rất thấp: Chỉ gọi JS API có sẵn của Google | Rất cao: Phải duy trì tool phân giải URL thường xuyên bị block
+
+--- TABLE 3 ---
+// Regex nhận dạng chính xác Video ID 11 ký tự từ mọi dạng link YouTube phổ biến var ytRegex = regexp.MustCompile(`^(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})(?:[?&].*)?$`)  func ExtractVideoID(rawURL string) (string, error) {     if len(rawURL) > 500 {         return "", errors.New("URL quá dài")     }     matches := ytRegex.FindStringSubmatch(strings.TrimSpace(rawURL))     if len(matches) < 2 {         return "", errors.New("URL không hợp lệ hoặc không phải YouTube Video")     }     videoID := matches[1]     return videoID, nil }

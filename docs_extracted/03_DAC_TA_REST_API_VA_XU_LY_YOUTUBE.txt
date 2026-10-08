@@ -1,0 +1,9 @@
+03. ĐẶC TẢ REST API & TÍCH HỢP YOUTUBE
+Chi Tiết 13 REST Endpoints, Khử Độc URL & Cơ Chế IFrame Player API
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Quy Chuẩn Giao Tiếp & Envelope Chuẩn Hóa
+• Base URL: https://api.example.com/api/v1
+• Headers bắt buộc: Content-Type: application/json; charset=utf-8
+• Envelope chuẩn hóa:
+2. Bảng Danh Mục 13 Endpoints Cốt Lõi Cần Maintain
+3. Khử Độc URL YouTube & Chống SSRF Bằng Regex

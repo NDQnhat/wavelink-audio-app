@@ -1,0 +1,16 @@
+07. EPISODE & SEGMENT SYSTEM DESIGN
+Thiết Kế Hệ Thống Phân Đoạn Tập Logic Cho Video Siêu Dài (>24 Giờ)
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Bài Toán Kỹ Thuật Với Video Siêu Dài
+Nhiều nội dung audiobook, truyện tiên hiệp, podcast tổng hợp trên YouTube có thời lượng từ 10 giờ đến hơn 24 giờ (thậm chí 30 giờ). Việc để một thanh seek bar duy nhất kéo dài 30 giờ khiến trải nghiệm người dùng rất tồi tệ (chạm nhẹ ngón tay có thể nhảy lệch 30 phút), dễ mất dấu vị trí nghe và khó định vị phân đoạn.
+2. Thuật Toán Sinh Episode Tự Động Trong Golang
+3. Cơ Chế Auto-Next Episode & Bound Checking
+Khi người dùng nghe trong Episode N:
+• Giới hạn Seek: Thanh trượt của Episode N chỉ hiển thị trong phạm vi thời lượng của tập đó (0 -> episode.duration). Khi tua đến giây X trong tập, vị trí thực trên YouTube là: actualTime = episode.start_seconds + X.
+• Sự kiện hoàn thành (Episode Finished): Khi player.getCurrentTime() >= episode.end_seconds, player tự động đánh dấu completed = true cho Episode N, cập nhật Episode N+1, seekTo(episode_next.start_seconds) và tiếp tục phát.
+
+--- TABLE 1 ---
+[FACT] GIẢI PHÁP LOGICAL SEGMENTS: Hệ thống tự động chia video thành các Episode logic dựa trên mốc thời gian bắt đầu (start_seconds) và kết thúc (end_seconds). Mỗi Episode hoạt động như một track độc lập trên giao diện người dùng, nhưng cùng trỏ về một youtube_video_id duy nhất.
+
+--- TABLE 2 ---
+// Cấu hình kích thước block mặc định (4 giờ = 14400 giây) const DefaultEpisodeDuration = 14400 // 4 * 3600  type Episode struct {     EpisodeNumber int    `json:"episodeNumber"`     Title         string `json:"title"`     StartSeconds  int    `json:"startSeconds"`     EndSeconds    int    `json:"endSeconds"`     Duration      int    `json:"duration"` }  func GenerateLogicalEpisodes(totalDuration int, blockSize int) []Episode {     if blockSize <= 0 {         blockSize = DefaultEpisodeDuration     }     // Nếu video ngắn hơn hoặc bằng blockSize, chỉ có 1 tập     if totalDuration <= blockSize {         return []Episode{{             EpisodeNumber: 1,             Title:         "Tập 1",             StartSeconds:  0,             EndSeconds:    totalDuration,             Duration:      totalDuration,         }}     }      var episodes []Episode     numEpisodes := (totalDuration + blockSize - 1) / blockSize // Phép chia làm tròn lên (ceil)      for i := 0; i < numEpisodes; i++ {         start := i * blockSize         end := (i + 1) * blockSize         if end > totalDuration {             end = totalDuration         }         episodes = append(episodes, Episode{             EpisodeNumber: i + 1,             Title:         fmt.Sprintf("Tập %d (%s - %s)", i+1, formatTime(start), formatTime(end)),             StartSeconds:  start,             EndSeconds:    end,             Duration:      end - start,         })     }     return episodes }

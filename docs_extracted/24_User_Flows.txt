@@ -1,0 +1,11 @@
+24. USER FLOWS & SYSTEM STATE TRANSITIONS
+Đặc Tả Quy Trình Người Dùng & Trạng Thái Thực Thể
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Sơ Đồ Chuyển Đổi Trạng Thái Âm Thanh (Audio State Machine)
+2. Quy Trình Người Nghe Tương Tác (Listener User Journey)
+1. Khám phá: Mở web tĩnh -> Tải danh sách bài hát hot từ API -> Chọn thể loại / gõ từ khóa tìm kiếm.
+2. Trải nghiệm phát nhạc: Bấm nút Play trên một track -> Thẻ audio nạp stream URL -> Nginx truyền stream bytes 206 -> Hiển thị thanh sóng âm thanh và thời gian.
+3. Cá nhân hóa: Người dùng nhấn nút Tim (Favorite) -> Kiểm tra đăng nhập (nếu chưa hiện Modal Login) -> Gửi POST /api/v1/favorites/{id} -> Nút Tim sáng đỏ tức thì.
+
+--- TABLE 1 ---
+[ Tải lên File ]        │        ▼    [ DRAFT ] ──(Đưa vào hàng đợi)──► [ PROCESSING ] ──(Lỗi FFmpeg)──► [ FAILED ]                                             │                              │                                      (Chuyển mã xong)                 (Thử lại)                                             │                              │                                             ▼                              ▼                                      [ PUBLISHED ] ◄───────────────────────┘                                        │        ▲                            (Bản quyền/ │        │ (Khôi phục)                              Ẩn nội dung)       │                                        ▼        │                                     [ UNPUBLISHED ]

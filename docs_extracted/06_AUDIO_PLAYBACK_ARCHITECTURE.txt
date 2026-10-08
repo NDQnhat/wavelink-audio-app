@@ -1,0 +1,20 @@
+06. AUDIO PLAYBACK ARCHITECTURE
+Kiến Trúc Phát Âm Thanh, IFrame Player API & Giới Hạn Transcoding
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Phân Tích Kỹ Thuật 14 Câu Hỏi Phát Âm Thanh
+1. YouTube API có cho phép lấy raw audio stream không? [FACT] KHÔNG. YouTube Data API v3 và các API chính thức của Google không cung cấp direct URL cho audio stream độc lập.
+2. Có được cache/lưu audio không? [POLICY LIMITATION] KHÔNG. Điều khoản cấm lưu trữ, tải xuống nội dung nghe nhìn từ YouTube.
+3. IFrame Player API đáp ứng audio UI ở mức nào? [FACT] Rất tốt. Cung cấp đầy đủ các hàm playVideo(), pauseVideo(), seekTo(seconds), getCurrentTime(), getDuration(), onStateChange.
+4. Có thể ẩn video UI nhưng vẫn tuân thủ policy không? [ANALYSIS] IFrame Player API cho phép đặt kích thước nhỏ gọn (ví dụ 200x200 hoặc đặt ẩn thị giác phía sau bìa Album Artwork). Để tuân thủ Developer Policies, không được can thiệp xóa logo YouTube hoặc chặn quảng cáo của tác giả.
+5. Nếu cần MP3 thực sự thì nguồn nào hợp lệ? [FACT] Chỉ dành riêng cho nội dung người dùng tự tải lên (User-owned content), nhạc Public Domain hoặc Creative Commons có cấp phép.
+6. Video 24h xử lý ra sao? [RECOMMENDATION] Áp dụng 100% Logical Episodes. Không tạo 7 bản sao MP3 vật lý chỉ để phục vụ việc chia tập!
+2. Bảng So Sánh Quyết Định Kiến Trúc Playback
+
+--- TABLE 1 ---
+Tiêu chí kỹ thuật | Option A: YouTube -> MP3 Vật lý | Option B: Logical Episodes + IFrame API (CHỌN) | Option C: Pipe FFmpeg Transcoding
+CPU Server VPS 1 core | Spike 100% CPU hàng giờ | 0% CPU (Tải thuộc về Google CDN) | Cao: 40% - 70% CPU cho mỗi listener
+Bộ nhớ RAM | Dễ gây tràn RAM / OOM | Dưới 50MB RAM ổn định | Tốn buffer RAM cho pipe
+Dung lượng đĩa (Disk) | Tốn 500MB - 2GB / video 24h | 0 Byte ổ đĩa (Chỉ lưu mốc giây trong DB) | Tốn bộ đệm đĩa tạm thời
+Băng thông máy chủ | Hàng chục Mbps egress | 0 Mbps băng thông VPS | Băng thông streaming cao
+Độ trễ phát nhạc | Chờ 10 - 30 phút convert | Tức thì < 500ms | Chờ buffer 3 - 5 giây
+Tuân thủ bản quyền | Vi phạm nghiêm trọng ToS | 100% Tuân thủ điều khoản YouTube | Chỉ hợp pháp với file tự sở hữu

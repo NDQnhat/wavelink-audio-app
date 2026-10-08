@@ -1,0 +1,27 @@
+05. REST API SPECIFICATION
+Quy Chuẩn RESTful API Cho YouTube Audio Library & Episodes
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Tiêu Chuẩn Giao Tiếp & Envelope Chuẩn
+• Base URL: https://api.example.com/api/v1
+• Content-Type: application/json; charset=utf-8
+• Format Envelope:
+2. Bảng Danh Mục Endpoints Chi Tiết
+
+--- TABLE 1 ---
+// Thành công: {   "success": true,   "data": { ... },   "meta": { "page": 1, "pageSize": 20, "total": 45 } }  // Thất bại: {   "success": false,   "error": {     "code": "DUPLICATE_VIDEO",     "message": "Video này đã tồn tại trong thư viện",     "details": { "existingAudioId": 12 }   } }
+
+--- TABLE 2 ---
+Phương thức | Endpoint | Xác thực | Mô tả nghiệp vụ
+POST | /api/v1/audios/import-youtube | User/Admin | Nhập link YouTube, validate, kiểm tra trùng lặp, lưu metadata & sinh Episode
+GET | /api/v1/audios | Public | Lấy danh sách Audio Library (Phân trang, Lọc Category/Author, Sort)
+GET | /api/v1/audios/{id} | Public | Chi tiết Audio (kèm thông tin Category, Tags, Tổng thời lượng)
+PUT | /api/v1/audios/{id} | Owner/Admin | Cập nhật Category, Tags hoặc mô tả của Audio
+POST | /api/v1/audios/{id}/refresh | Owner/Admin | Đồng bộ lại Metadata mới nhất từ YouTube
+GET | /api/v1/audios/{id}/episodes | Public | Danh sách các Episode logic kèm mốc start/end của Audio
+POST | /api/v1/audios/{id}/episodes/generate | Owner/Admin | Tạo lại danh sách Episode theo cấu hình block size mới
+GET | /api/v1/categories | Public | Danh sách toàn bộ Category nội bộ (Cache in-memory)
+GET | /api/v1/tags | Public | Danh sách các Tags phổ biến trong thư viện
+GET | /api/v1/users/me/progress | Auth/Guest | Lấy toàn bộ danh sách audio đang nghe dở của người dùng
+GET | /api/v1/audios/{id}/progress | Auth/Guest | Lấy vị trí nghe gần nhất của Audio/Episode để Resume
+PUT | /api/v1/progress | Auth/Guest | Cập nhật tiến trình nghe (định kỳ 60s, khi pause/seek/hide)
+POST | /api/v1/history | Auth/Guest | Ghi nhận một lượt nghe vào bảng listening_history

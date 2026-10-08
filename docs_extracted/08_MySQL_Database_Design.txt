@@ -1,0 +1,24 @@
+08. MYSQL DATABASE DESIGN & TUNING
+Đặc Tả Cơ Sở Dữ Liệu MySQL 8.x & Tối Ưu Server Yếu
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Nguyên Lý Thiết Kế Schema & Ràng Buộc
+• Storage Engine: Bắt buộc sử dụng 100% InnoDB để đảm bảo tính toàn vẹn giao dịch (ACID), Foreign Keys và Row-level Locking.
+• Character Set: Bắt buộc sử dụng utf8mb4 với Collation utf8mb4_0900_ai_ci nhằm hỗ trợ đầy đủ tiếng Việt có dấu, ký tự quốc tế và emoji.
+• Kiểu dữ liệu tối ưu: Sử dụng INT UNSIGNED hoặc BIGINT UNSIGNED cho Primary Key, VARCHAR độ dài hợp lý, ENUM/TINYINT cho trạng thái để tiết kiệm bộ nhớ chỉ mục.
+2. Cấu Hình MySQL Tối Ưu Cho Máy Chủ 1GB - 2GB RAM (my.cnf)
+3. Chiến Lược Đánh Chỉ Mục (Indexing Strategy)
+• Fulltext Search: Đặt FULLTEXT INDEX idx_ft_title_artist ON audios(title) phục vụ tìm kiếm từ khóa với MATCH() AGAINST().
+• Composite Index: Đặt INDEX idx_playlist_position ON playlist_items(playlist_id, position) để tối ưu việc load playlist có thứ tự.
+• Tránh N+1 Query: Go backend sử dụng các câu lệnh JOIN tường minh hoặc mảng ID (WHERE id IN (...)) thay vì lặp từng query đơn lẻ.
+
+--- TABLE 1 ---
+[WARNING] Mặc định MySQL 8.x phân bổ innodb_buffer_pool_size lớn (> 128MB tới 80% RAM), dễ dẫn đến tình trạng máy chủ Linux bị tràn RAM và kích hoạt OOM Killer tiêu diệt tiến trình MySQL. Phải cấu hình my.cnf chuẩn xác theo bảng thông số dưới đây.
+
+--- TABLE 2 ---
+Tham số cấu hình | Giá trị khuyến nghị | Mục đích tối ưu tài nguyên
+innodb_buffer_pool_size | 256M (cho VPS 1GB) / 512M (cho VPS 2GB) | Khống chế bộ đệm RAM của InnoDB, chiếm tối đa 30% tổng RAM hệ thống
+innodb_log_file_size | 64M | Duy trì log ghi transaction đủ cho throughput vừa phải
+max_connections | 50 | Giới hạn kết nối tối đa từ Go backend và admin CLI, tránh cạn RAM stack
+thread_cache_size | 8 | Tái sử dụng thread kết nối, giảm CPU overhead khởi tạo thread
+table_open_cache | 400 | Kiểm soát số lượng file descriptor mở
+slow_query_log | 1 (long_query_time = 1.0s) | Bật giám sát các câu lệnh truy vấn chạy chậm vượt quá 1 giây

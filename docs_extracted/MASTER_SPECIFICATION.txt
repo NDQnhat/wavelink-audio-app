@@ -1,0 +1,66 @@
+MASTER SYSTEM SPECIFICATION
+Văn Kiện Đặc Tả Trung Tâm Trả Lời 27 Câu Hỏi Kiến Trúc Cốt Lõi
+―――――――――――――――――――――――――――――――――――――――――――――
+1. Lời Mở Đầu & Bản Thiết Kế Định Vị (Master Blueprint)
+Tài liệu MASTER_SPECIFICATION.docx là tài liệu đặc tả tối cao trả lời toàn diện, dứt khoát và chính xác 27 câu hỏi kiến trúc nền tảng cho hệ thống Personal YouTube Audio Listening Session System.
+2. Bảng Phản Biện Chi Tiết 27 Câu Hỏi Kiến Trúc
+1. User nhập URL ở đâu?
+User nhập URL tại thanh input duy nhất trên giao diện trang chủ Frontend tĩnh (Vanilla HTML5/CSS3) tại domain https://example.com.
+2. Backend nhận URL thế nào?
+Frontend gửi HTTP POST JSON tới endpoint https://api.example.com/api/v1/sessions với body {"youtubeUrl": "..."} đính kèm thông tin phiên hoặc guest cookie.
+3. Video ID được lấy thế nào?
+Go Backend thực hiện parse và khử độc URL bằng biểu thức chính quy (Regex) cô lập chính xác chuỗi 11 ký tự Base64 [a-zA-Z0-9_-]{11}. Tuyệt đối không tin cậy dữ liệu client gửi.
+4. Metadata lấy thế nào?
+Backend ưu tiên truy vấn YouTube Data API v3 (hoặc noembed.com / oEmbed chính thức của YouTube không tốn quota). Metadata bao gồm: Title, Channel, Duration, Thumbnail.
+5. Database lưu gì?
+MySQL 8.x chỉ lưu 4 bảng thực thể tinh gọn: users (tài khoản/guest), youtube_videos (cache metadata), listening_sessions (trạng thái phiên), và listening_progress (vị trí nghe tính bằng giây).
+6. Khi nào session được tạo?
+Session được tạo ngay lập tức trong Database (status='READY') sau khi Go Backend xác thực URL thành công và lưu metadata.
+7. Khi nào media processing bắt đầu?
+Trong Kiến trúc Khuyến nghị (IFrame Player API), KHÔNG CÓ media processing. Nếu sử dụng Temporary Processing cho file upload hợp pháp, processing chỉ kích hoạt khi người dùng nhấn nút PLAY.
+8. Media có được lưu permanent không?
+9. MP3 tồn tại bao lâu?
+Nếu tệp âm thanh tạm thời được tạo ra trong quá trình xử lý, nó chỉ tồn tại tối đa trong thời gian Session hoạt động (TTL = 30 phút). Hết hạn sẽ bị Worker dọn sạch.
+10. Audio được stream thế nào?
+Trình duyệt phát thông qua YouTube IFrame Player API (phát từ CDN Google) HOẶC qua Nginx HTTP 206 Partial Content (X-Accel-Redirect) nếu là tệp tạm hợp pháp.
+11. Player đồng bộ với video thế nào?
+Nguồn sự thật (Source of Truth) duy nhất là hàm player.getCurrentTime() của IFrame Player API hoặc audio.currentTime của thẻ HTML5. Không sử dụng timer riêng của JS.
+12. Progress được lưu khi nào?
+Progress được gửi lưu lên Backend: (1) Định kỳ mỗi 60 giây khi đang PLAYING; (2) Ngay lập tức khi PAUSE; (3) Khi bài hát kết thúc (ENDED); (4) Khi tab bị ẩn (document.visibilitychange).
+13. Tại sao backup mỗi 1 phút?
+Chu kỳ 60 giây là điểm cân bằng hoàn hảo giữa việc bảo toàn trải nghiệm nghe (người dùng không bị mất vị trí nghe quá 1 phút nếu sự cố xảy ra) và việc bảo vệ tài nguyên máy chủ yếu (chỉ 1 req/phút/user).
+14. Nếu browser crash thì sao?
+Khi mở lại trình duyệt và dán lại URL, Frontend gọi GET /api/v1/progress/{videoId}. Backend trả về vị trí gần nhất đã lưu trong MySQL. Player tự động seekTo() tới điểm đó.
+15. Nếu network mất thì sao?
+Frontend bắt lỗi API thất bại, lưu vị trí chưa đồng bộ vào localStorage. Khi sự kiện window.online kích hoạt, client tự động đẩy dữ liệu lên backend đồng bộ lại.
+16. Nếu server restart thì sao?
+Nhờ cơ chế UPSERT lưu vào MySQL bền vững, toàn bộ metadata và tiến trình không bị ảnh hưởng. Hàm init() của Go backend khi khởi động sẽ tự động dọn sạch thư mục tạm /tmp/audio-sessions/.
+17. Nếu FFmpeg fail thì sao?
+Nếu áp dụng media processing và FFmpeg thất bại, job cập nhật FAILED, giải phóng tài nguyên tạm thời và trả về mã lỗi 422/500 JSON rõ ràng, không làm treo server.
+18. Nếu video không tồn tại thì sao?
+Backend phát hiện qua YouTube API/oEmbed, trả về ngay HTTP 404 với error code VIDEO_NOT_FOUND. Frontend hiển thị thông báo lỗi thân thiện cho người dùng.
+19. Nếu hai thiết bị cùng nghe thì sao?
+Áp dụng chiến lược 'Latest Valid Update Wins' dựa trên client_updated_at và server validation. Thiết bị nào có mốc thời gian cập nhật mới nhất và hợp lệ sẽ được ghi nhận.
+20. Server yếu chịu tải thế nào?
+Nhờ ủy quyền toàn bộ tải truyền phát media nặng cho YouTube CDN (hoặc Nginx sendfile), Go backend chỉ xử lý các request JSON siêu nhẹ (~100 bytes). Server 1GB RAM chịu tải dễ dàng hàng trăm người dùng đồng thời.
+21. Nginx xử lý gì?
+Nginx đóng vai trò Reverse Proxy, SSL Termination Let's Encrypt, Rate Limiting nghiêm ngặt chống spam, nén phản hồi và bảo vệ Go process.
+22. Go xử lý gì?
+Go Backend xử lý logic nghiệp vụ: parse URL, validate Video ID, quản lý phiên nghe, thực hiện câu lệnh UPSERT progress vào MySQL, cấp phát Guest token.
+23. MySQL lưu gì?
+MySQL chỉ lưu 4 bảng dữ liệu: users, youtube_videos, listening_sessions, và listening_progress. Cấu hình buffer pool 256MB tối ưu hoàn hảo cho RAM 1GB.
+24. Frontend deploy ở đâu?
+Frontend deploy trên Git-based Static Hosting (Cloudflare Pages hoặc GitHub Pages). Hoàn toàn miễn phí, chịu tải không giới hạn, 0% CPU server backend.
+25. Backend deploy ở đâu?
+Backend deploy trên máy chủ riêng Linux VPS (Ubuntu 22.04 LTS), chạy Native Go binary dưới dạng systemd service kết hợp MySQL cục bộ và Nginx.
+26. Những gì không được phép làm theo YouTube policy?
+27. Kiến trúc cuối cùng là gì?
+
+--- TABLE 1 ---
+[POLICY LIMITATION] TUYỆT ĐỐI KHÔNG. Không có bất kỳ tệp MP3 nào được lưu trữ vĩnh viễn trên máy chủ.
+
+--- TABLE 2 ---
+[POLICY LIMITATION] NGHIÊM CẤM: Stream-ripping, download video lậu, tách riêng track audio để host lại trên server riêng, bypass cơ chế DRM, vi phạm bản quyền tác giả.
+
+--- TABLE 3 ---
+[RECOMMENDATION] KIẾN TRÚC CUỐI CÙNG LÀ: HYBRID AUDIO-CENTRIC ARCHITECTURE. Sử dụng YouTube IFrame Player API chính thức để truyền phát âm thanh hợp pháp (hoặc che video tạo Audio UI), kết hợp Go Backend + MySQL siêu nhẹ để quản lý Session và đồng bộ Listening Progress mỗi 60 giây.
