@@ -1,8 +1,0 @@
-01. HỆ THỐNG & KIẾN TRÚC TỔNG THỂ
-Tài Liệu Hướng Dẫn Vận Hành & Kiến Trúc Nền Tảng (Core Architecture)
-―――――――――――――――――――――――――――――――――――――――――――――
-1. Định Vị Dự Án & Nguyên Lý Bất Biến (Core Mandate)
-Hệ thống là một Web Application cá nhân hóa cho phép người dùng nhập bất kỳ URL YouTube nào để đưa vào Thư viện Audio, tự động gán Thể loại (Category), Thẻ gắn (Tags), chia nhỏ các video siêu dài (> 24 giờ) thành các tập logic (Logical Episodes 4 giờ), tìm kiếm/lọc đa tiêu chí, phát âm thanh qua YouTube IFrame Player API và tự động đồng bộ tiến trình nghe (Listening Progress) mỗi 60 giây.
-2. Mô Hình Phân Tách Hạ Tầng (Deployment Topology)
-Kiến trúc tách biệt hoàn toàn giữa giao diện tĩnh (Frontend) và máy chủ API (Backend), đảm bảo server backend 1 vCPU, 1GB RAM không bị quá tải bởi các tài nguyên tĩnh.
-3. Bảng Phân Bổ Ngân Sách Bộ Nhớ RAM Trên VPS 1GB

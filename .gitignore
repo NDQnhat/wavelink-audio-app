@@ -1,0 +1,46 @@
+# Binaries and executables
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+backend/api.exe
+api.exe
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Production build outputs
+dist/
+build/
+frontend/dist/
+
+# SQLite databases & runtime locks
+*.db
+*.db-journal
+*.db-wal
+backend/*.db
+backend/*.db-journal
+backend/*.db-wal
+
+# Environment files
+.env
+.env.local
+*.env
+backend/.env
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Operating system & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

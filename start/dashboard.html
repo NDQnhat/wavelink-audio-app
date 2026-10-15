@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WaveLink - Mission Control & Live Debugger</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background-color: #F4F4F0;
+      background-image: radial-gradient(#000000 1.2px, transparent 1.2px);
+      background-size: 20px 20px;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .shadow-comic { box-shadow: 4px 4px 0 #000000; }
+    .shadow-comic-sm { box-shadow: 2px 2px 0 #000000; }
+    .card-comic {
+      background: #FFFFFF;
+      border: 2.5px solid #000000;
+      border-radius: 12px;
+      box-shadow: 4px 4px 0 #000000;
+    }
+    .btn-comic {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      font-weight: 800;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: 2px solid #000000;
+      background: #FFFFFF;
+      box-shadow: 3px 3px 0 #000000;
+      transition: all 0.1s ease;
+      cursor: pointer;
+      user-select: none;
+    }
+    .btn-comic:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 #000000; }
+    .btn-comic:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #000000; }
+    .btn-yellow { background: #FFE600; color: #000; }
+    .btn-yellow:hover { background: #FACC15; }
+    .btn-blue { background: #3A86FF; color: #FFF; }
+    .btn-blue:hover { background: #2563EB; }
+    .btn-teal { background: #2A9D8F; color: #FFF; }
+    .btn-teal:hover { background: #238579; }
+    .btn-red { background: #E63946; color: #FFF; }
+    .btn-red:hover { background: #DC2626; }
+    .btn-gray { background: #E5E7EB; color: #000; }
+    .badge-comic {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-weight: 800;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      padding: 0.25rem 0.5rem;
+      border-radius: 6px;
+      border: 1.5px solid #000000;
+      box-shadow: 1.5px 1.5px 0 #000000;
+    }
+    .terminal-box {
+      background: #0D1117;
+      color: #E6EDF3;
+      border: 2.5px solid #000000;
+      border-radius: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.825rem;
+      line-height: 1.5;
+    }
+    .terminal-box::-webkit-scrollbar { width: 8px; }
+    .terminal-box::-webkit-scrollbar-track { background: #161B22; }
+    .terminal-box::-webkit-scrollbar-thumb { background: #30363D; border-radius: 4px; }
+    .terminal-box::-webkit-scrollbar-thumb:hover { background: #8B949E; }
+  </style>
+</head>
+<body class="p-4 md:p-6 min-h-screen flex flex-col justify-between">
+
+  <!-- HEADER -->
+  <header class="max-w-6xl mx-auto w-full mb-6">
+    <div class="card-comic p-4 md:p-5 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-xl bg-[#FFE600] border-2 border-black flex items-center justify-center text-2xl font-black shadow-comic-sm">
+          <i class="ri-dashboard-3-line"></i>
+        </div>
+        <div>
+          <h1 class="text-xl md:text-2xl font-black tracking-tight flex items-center gap-2">
+            WAVELINK MISSION CONTROL
+            <span class="badge-comic bg-black text-white text-[10px]">LIVE SYNC</span>
+          </h1>
+          <p class="text-xs text-gray-700 font-bold">Chạy trực tiếp lệnh CMD • Giám sát & Fix Bug Real-time (Port 9999)</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 flex-wrap">
+        <a href="http://localhost:5173" target="_blank" class="btn-comic btn-teal text-xs">
+          <i class="ri-external-link-line"></i> Mở Web App (5173)
+        </a>
+        <button onclick="restartAll()" class="btn-comic btn-yellow text-xs">
+          <i class="ri-restart-line"></i> Restart Toàn Bộ
+        </button>
+        <button onclick="shutdownServer()" class="btn-comic btn-red text-xs">
+          <i class="ri-power-flash-line"></i> Tắt Hệ Thống
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- METRIC STATUS CARDS -->
+  <main class="max-w-6xl mx-auto w-full grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
+
+    <!-- 1. BACKEND CARD -->
+    <div class="card-comic p-5 flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <span class="font-black text-sm uppercase flex items-center gap-2">
+            <i class="ri-server-line text-lg text-blue-600"></i> Backend API
+          </span>
+          <span id="be-badge" class="badge-comic bg-gray-200 text-gray-700">Đang kiểm tra...</span>
+        </div>
+        <div class="text-xs text-gray-600 mb-2 font-mono">
+          Lệnh: <span class="bg-gray-100 px-1 py-0.5 rounded border border-gray-300 font-bold text-black">go run ./cmd/api/main.go</span>
+        </div>
+        <div class="text-xs text-gray-600 font-mono">
+          Cổng: <span class="font-black text-black">8080</span> • PID: <span id="be-pid" class="font-bold text-black">-</span>
+        </div>
+      </div>
+
+      <div class="mt-4 pt-3 border-t-2 border-black flex items-center justify-between gap-2">
+        <button id="be-toggle-btn" onclick="toggleBE()" class="btn-comic btn-blue text-xs flex-1">
+          <i class="ri-play-line"></i> Bật BE
+        </button>
+        <button onclick="restartBE()" class="btn-comic btn-gray text-xs" title="Khởi động lại Backend">
+          <i class="ri-refresh-line"></i>
+        </button>
+        <a href="http://localhost:8080/api/v1/audios" target="_blank" class="btn-comic btn-gray text-xs" title="Mở API Audios">
+          <i class="ri-links-line"></i>
+        </a>
+      </div>
+    </div>
+
+    <!-- 2. FRONTEND CARD -->
+    <div class="card-comic p-5 flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <span class="font-black text-sm uppercase flex items-center gap-2">
+            <i class="ri-window-line text-lg text-purple-600"></i> Frontend Vite
+          </span>
+          <span id="fe-badge" class="badge-comic bg-gray-200 text-gray-700">Đang kiểm tra...</span>
+        </div>
+        <div class="text-xs text-gray-600 mb-2 font-mono">
+          Lệnh: <span class="bg-gray-100 px-1 py-0.5 rounded border border-gray-300 font-bold text-black">npm run dev</span> (Hot-reload)
+        </div>
+        <div class="text-xs text-gray-600 font-mono">
+          Cổng: <span class="font-black text-black">5173</span> • PID: <span id="fe-pid" class="font-bold text-black">-</span>
+        </div>
+      </div>
+
+      <div class="mt-4 pt-3 border-t-2 border-black flex items-center justify-between gap-2">
+        <button id="fe-toggle-btn" onclick="toggleFE()" class="btn-comic btn-blue text-xs flex-1">
+          <i class="ri-play-line"></i> Bật FE
+        </button>
+        <button onclick="restartFE()" class="btn-comic btn-gray text-xs" title="Khởi động lại Frontend">
+          <i class="ri-refresh-line"></i>
+        </button>
+        <a href="http://localhost:5173" target="_blank" class="btn-comic btn-teal text-xs" title="Mở App">
+          <i class="ri-external-link-line"></i>
+        </a>
+      </div>
+    </div>
+
+    <!-- 3. DASHBOARD INFO CARD -->
+    <div class="card-comic p-5 flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <span class="font-black text-sm uppercase flex items-center gap-2">
+            <i class="ri-pulse-line text-lg text-emerald-600"></i> Điều Khiển
+          </span>
+          <span class="badge-comic bg-[#2A9D8F] text-white">ONLINE</span>
+        </div>
+        <div class="text-xs text-gray-600 mb-2 font-mono">
+          Dashboard: <span class="font-black text-black">http://localhost:9999</span>
+        </div>
+        <div class="text-xs text-gray-600 font-mono">
+          Đã ghi nhận: <span id="log-count" class="font-black text-black">0</span> dòng log
+        </div>
+      </div>
+
+      <div class="mt-4 pt-3 border-t-2 border-black flex items-center justify-between gap-2">
+        <button onclick="clearLogs()" class="btn-comic btn-gray text-xs flex-1">
+          <i class="ri-delete-bin-line"></i> Xóa Logs
+        </button>
+        <button onclick="location.reload()" class="btn-comic btn-yellow text-xs" title="Tải lại trang">
+          <i class="ri-refresh-line"></i>
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- TERMINAL CONSOLE VIEWER -->
+  <section class="max-w-6xl mx-auto w-full flex-1 flex flex-col mb-4">
+    <div class="card-comic p-4 flex-1 flex flex-col">
+      <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b-2 border-black mb-3">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-black text-xs uppercase mr-2 flex items-center gap-1">
+            <i class="ri-terminal-box-line text-base"></i> BỘ LỌC LOG:
+          </span>
+          <button onclick="setFilter('all')" id="tab-all" class="badge-comic bg-black text-white cursor-pointer">TẤT CẢ</button>
+          <button onclick="setFilter('be')" id="tab-be" class="badge-comic bg-white text-black cursor-pointer">BACKEND (BE)</button>
+          <button onclick="setFilter('fe')" id="tab-fe" class="badge-comic bg-white text-black cursor-pointer">FRONTEND (FE)</button>
+          <button onclick="setFilter('sys')" id="tab-sys" class="badge-comic bg-white text-black cursor-pointer">HỆ THỐNG (SYS)</button>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <div class="relative">
+            <input type="text" id="log-search-input" placeholder="Tìm kiếm log..." class="text-xs px-2.5 py-1.5 rounded-md border-2 border-black font-mono pl-7 w-44 md:w-56 focus:outline-none focus:ring-2 focus:ring-yellow-400">
+            <i class="ri-search-line absolute left-2 top-2 text-xs text-gray-500"></i>
+          </div>
+          <label class="flex items-center gap-1.5 text-xs font-bold cursor-pointer select-none">
+            <input type="checkbox" id="auto-scroll-check" checked class="w-4 h-4 accent-black rounded">
+            Cuộn tự động
+          </label>
+        </div>
+      </div>
+
+      <!-- Terminal Output Box -->
+      <div id="terminal-content" class="terminal-box p-4 h-[420px] overflow-y-auto flex-1 font-mono">
+        <div class="text-gray-500 italic">Đang nạp dữ liệu log hệ thống...</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="max-w-6xl mx-auto w-full text-center text-xs text-gray-700 font-bold py-2">
+    WaveLink Mission Control • Port 8080 (Golang API) + Port 5173 (React Vite Dev) + Port 9999 (Dashboard)
+  </footer>
+
+  <!-- CLIENT-SIDE SCRIPT -->
+  <script>
+    let currentFilter = 'all';
+    let allLogs = [];
+    let lastLogId = 0;
+    let beRunning = false;
+    let feRunning = false;
+
+    function setFilter(filter) {
+      currentFilter = filter;
+      ['all', 'be', 'fe', 'sys'].forEach(f => {
+        const btn = document.getElementById('tab-' + f);
+        if (f === filter) {
+          btn.className = "badge-comic bg-black text-white cursor-pointer";
+        } else {
+          btn.className = "badge-comic bg-white text-black cursor-pointer";
+        }
+      });
+      renderLogs();
+    }
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+
+        beRunning = data.be.running;
+        feRunning = data.fe.running;
+
+        // BE status
+        const beBadge = document.getElementById('be-badge');
+        const beBtn = document.getElementById('be-toggle-btn');
+        document.getElementById('be-pid').innerText = data.be.pid || (beRunning ? 'Port Active' : '-');
+        if (beRunning) {
+          beBadge.className = "badge-comic bg-[#2A9D8F] text-white";
+          beBadge.innerHTML = '<i class="ri-checkbox-circle-fill"></i> RUNNING';
+          beBtn.className = "btn-comic btn-red text-xs flex-1";
+          beBtn.innerHTML = '<i class="ri-stop-line"></i> Dừng BE';
+        } else {
+          beBadge.className = "badge-comic bg-gray-200 text-gray-700";
+          beBadge.innerHTML = '<i class="ri-close-circle-fill"></i> STOPPED';
+          beBtn.className = "btn-comic btn-blue text-xs flex-1";
+          beBtn.innerHTML = '<i class="ri-play-line"></i> Bật BE';
+        }
+
+        // FE status
+        const feBadge = document.getElementById('fe-badge');
+        const feBtn = document.getElementById('fe-toggle-btn');
+        document.getElementById('fe-pid').innerText = data.fe.pid || (feRunning ? 'Port Active' : '-');
+        if (feRunning) {
+          feBadge.className = "badge-comic bg-[#2A9D8F] text-white";
+          feBadge.innerHTML = '<i class="ri-checkbox-circle-fill"></i> RUNNING';
+          feBtn.className = "btn-comic btn-red text-xs flex-1";
+          feBtn.innerHTML = '<i class="ri-stop-line"></i> Dừng FE';
+        } else {
+          feBadge.className = "badge-comic bg-gray-200 text-gray-700";
+          feBadge.innerHTML = '<i class="ri-close-circle-fill"></i> STOPPED';
+          feBtn.className = "btn-comic btn-blue text-xs flex-1";
+          feBtn.innerHTML = '<i class="ri-play-line"></i> Bật FE';
+        }
+      } catch (err) {}
+    }
+
+    async function fetchLogs() {
+      try {
+        const res = await fetch('/api/logs?last_id=' + lastLogId);
+        const data = await res.json();
+        if (data.logs && data.logs.length > 0) {
+          allLogs.push(...data.logs);
+          lastLogId = data.last_id;
+          if (allLogs.length > 3000) allLogs = allLogs.slice(-2500);
+          renderLogs();
+          document.getElementById('log-count').innerText = allLogs.length;
+        }
+      } catch (err) {}
+    }
+
+    function renderLogs() {
+      const term = document.getElementById('terminal-content');
+      const search = document.getElementById('log-search-input').value.toLowerCase();
+
+      const filtered = allLogs.filter(item => {
+        if (currentFilter !== 'all' && item.type !== currentFilter) return false;
+        if (search && !item.text.toLowerCase().includes(search)) return false;
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        term.innerHTML = '<div class="text-gray-500 italic py-2">Không có log nào phù hợp với bộ lọc hiện tại.</div>';
+        return;
+      }
+
+      term.innerHTML = filtered.map(log => {
+        let tagColor = 'bg-gray-700 text-gray-200';
+        let textColor = 'text-gray-300';
+
+        if (log.type === 'be') {
+          tagColor = 'bg-blue-900 text-blue-200 border border-blue-500';
+          textColor = 'text-blue-100';
+        } else if (log.type === 'fe') {
+          tagColor = 'bg-purple-900 text-purple-200 border border-purple-500';
+          textColor = 'text-purple-100';
+        } else if (log.type === 'sys') {
+          tagColor = 'bg-amber-900 text-amber-200 border border-amber-500';
+          textColor = 'text-amber-100';
+        }
+
+        const isErr = log.text.toLowerCase().includes('error') || log.text.toLowerCase().includes('lỗi') || log.text.toLowerCase().includes('fail');
+        if (isErr) textColor = 'text-rose-400 font-bold';
+
+        return `
+          <div class="py-0.5 leading-relaxed flex items-start gap-2 hover:bg-white/5 px-1 rounded">
+            <span class="text-gray-500 select-none text-[11px] shrink-0 pt-0.5">${log.time}</span>
+            <span class="text-[10px] font-bold px-1.5 rounded select-none shrink-0 ${tagColor}">${log.type.toUpperCase()}</span>
+            <span class="break-all whitespace-pre-wrap ${textColor}">${escapeHtml(log.text)}</span>
+          </div>
+        `;
+      }).join('');
+
+      if (document.getElementById('auto-scroll-check').checked) {
+        term.scrollTop = term.scrollHeight;
+      }
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async function toggleBE() {
+      const endpoint = beRunning ? '/api/be/stop' : '/api/be/start';
+      await fetch(endpoint, { method: 'POST' });
+      fetchStatus();
+    }
+
+    async function restartBE() {
+      await fetch('/api/be/restart', { method: 'POST' });
+      fetchStatus();
+    }
+
+    async function toggleFE() {
+      const endpoint = feRunning ? '/api/fe/stop' : '/api/fe/start';
+      await fetch(endpoint, { method: 'POST' });
+      fetchStatus();
+    }
+
+    async function restartFE() {
+      await fetch('/api/fe/restart', { method: 'POST' });
+      fetchStatus();
+    }
+
+    async function restartAll() {
+      await fetch('/api/all/stop', { method: 'POST' });
+      setTimeout(async () => {
+        await fetch('/api/all/start', { method: 'POST' });
+        fetchStatus();
+      }, 1000);
+    }
+
+    async function clearLogs() {
+      allLogs = [];
+      await fetch('/api/logs/clear', { method: 'POST' });
+      renderLogs();
+      document.getElementById('log-count').innerText = 0;
+    }
+
+    async function shutdownServer() {
+      if (confirm("Bạn có chắc chắn muốn tắt toàn bộ hệ thống (BE, FE và Dashboard)?")) {
+        try {
+          await fetch('/api/shutdown', { method: 'POST' });
+        } catch(e) {}
+        document.body.innerHTML = `
+          <div class="min-h-screen flex items-center justify-center p-4">
+            <div class="card-comic p-8 max-w-md text-center">
+              <div class="text-5xl mb-4">👋</div>
+              <h2 class="text-2xl font-black mb-2">ĐÃ TẮT HỆ THỐNG</h2>
+              <p class="text-xs text-gray-600 mb-4">Tất cả cổng 8080, 5173 và 9999 đã được giải phóng an toàn.</p>
+              <button onclick="window.close()" class="btn-comic btn-yellow text-xs">Đóng Tab Này</button>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    document.getElementById('log-search-input').addEventListener('input', renderLogs);
+
+    // Initial load
+    fetchStatus();
+    setInterval(fetchStatus, 2000);
+    fetchLogs();
+    setInterval(fetchLogs, 700);
+  </script>
+</body>
+</html>

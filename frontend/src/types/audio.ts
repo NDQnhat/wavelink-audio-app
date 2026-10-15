@@ -1,0 +1,78 @@
+export interface Episode {
+  id: number;
+  audioId?: number;
+  episodeNumber: number;
+  title: string;
+  startSeconds: number;
+  endSeconds: number;
+  duration?: number;
+  completed?: boolean;
+  progressPercent?: number;
+  positionSeconds?: number;
+  isLocked?: boolean;
+}
+
+export interface AudioItem {
+  id: number;
+  youtubeVideoId: string;
+  youtubeUrl: string;
+  title: string;
+  author: string;
+  channel?: string;
+  description?: string;
+  categoryId: number;
+  categoryName?: string;
+  tags?: string[];
+  thumbnailUrl: string;
+  totalDurationSeconds: number;
+  formattedDuration?: string;
+  totalEpisodes: number;
+  status?: string; // 'ACTIVE' | 'PLAYING' | 'HIDDEN'
+  currentEpisodeId?: number;
+  currentEpisodeNumber?: number;
+  currentEpisodeTitle?: string;
+  lastPositionSeconds?: number;
+  formattedPosition?: string;
+  progressPercent?: number;
+  isFavorite?: boolean;
+  isVIPOnly?: boolean;
+  isVipOnly?: boolean;
+  createdBy?: number;
+  episodes?: Episode[];
+  viewCount?: number;
+}
+
+export interface AudioFilter {
+  search?: string;
+  categoryId?: number | null;
+  status?: string | null; // 'all' | 'my' | 'listening' | 'completed' | 'favorite'
+  tag?: string;
+  page?: number;
+  limit?: number;
+  pageSize?: number;
+  my?: boolean;
+  sort?: string;
+}
+
+export interface YouTubePreviewData {
+  videoId: string;
+  title: string;
+  author: string;
+  durationSeconds: number;
+  formattedDuration: string;
+  thumbnailUrl: string;
+}
+
+export interface ImportYouTubePayload {
+  url: string;
+  categoryId: number;
+  tags: string[];
+  blockSizeSeconds?: number;
+  durationSeconds?: number;
+  isVipOnly?: boolean;
+}
+
+export interface ImportResult {
+  duplicate?: boolean;
+  audio: AudioItem;
+}

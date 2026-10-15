@@ -1,0 +1,184 @@
+package history
+
+import (
+	"time"
+
+	"audio-app-backend/core/domain"
+	"audio-app-backend/core/logic"
+	"audio-app-backend/server/middleware"
+	"audio-app-backend/server/response"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+)
+
+type Handler struct {
+	db *gorm.DB
+}
+
+func NewHandler(db *gorm.DB) *Handler {
+	return &Handler{db: db}
+}
+
+type RecordHistoryRequest struct {
+	AudioID          uint `json:"audioId" binding:"required"`
+	EpisodeID        uint `json:"episodeId" binding:"required"`
+	DurationListened int  `json:"durationListened" binding:"required"`
+}
+
+func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
+	rg.GET("/history", middleware.RequireAuth(), h.GetRecentHistory)
+	rg.POST("/history", middleware.RequireAuth(), h.RecordHistory)
+}
+
+func (h *Handler) GetRecentHistory(c *gin.Context) {
+	userID := middleware.GetCurrentUserID(c)
+
+	// Lấy danh sách lịch sử nghe gần nhất của user
+	var rawHistory []domain.ListeningHistory
+	err := h.db.Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Limit(100).
+		Find(&rawHistory).Error
+
+	if err != nil {
+		response.Internal(c, "Lỗi truy vấn lịch sử nghe")
+		return
+	}
+
+	// Gom nhóm theo AudioID để mỗi truyện chỉ xuất hiện đúng 1 mục mới nhất
+	seenAudio := make(map[uint]bool)
+	var uniqueAudioIDs []uint
+	for _, hRec := range rawHistory {
+		if !seenAudio[hRec.AudioID] && hRec.AudioID > 0 {
+			seenAudio[hRec.AudioID] = true
+			uniqueAudioIDs = append(uniqueAudioIDs, hRec.AudioID)
+		}
+	}
+
+	if len(uniqueAudioIDs) == 0 {
+		response.OK(c, []domain.ConsolidatedHistoryItem{}, nil)
+		return
+	}
+
+	// Lấy latest progress của từng audio cho user
+	var progs []domain.ListeningProgress
+	h.db.Where("user_id = ? AND audio_id IN ?", userID, uniqueAudioIDs).
+		Order("updated_at DESC").
+		Find(&progs)
+
+	progByAudio := make(map[uint]domain.ListeningProgress)
+	for _, p := range progs {
+		if _, exists := progByAudio[p.AudioID]; !exists {
+			progByAudio[p.AudioID] = p
+		}
+	}
+
+	// Tổng hợp thời lượng nghe cho từng AudioID
+	type sumDur struct {
+		AudioID uint
+		Total   int
+	}
+	var sumDurs []sumDur
+	h.db.Model(&domain.ListeningHistory{}).
+		Select("audio_id, sum(duration_listened) as total").
+		Where("user_id = ? AND audio_id IN ?", userID, uniqueAudioIDs).
+		Group("audio_id").
+		Scan(&sumDurs)
+	durMap := make(map[uint]int)
+	for _, s := range sumDurs {
+		durMap[s.AudioID] = s.Total
+	}
+
+	// Lấy thông tin Audio kèm Episode
+	var audios []domain.Audio
+	h.db.Preload("Episodes").Where("id IN ?", uniqueAudioIDs).Find(&audios)
+	audioMap := make(map[uint]domain.Audio)
+	for _, a := range audios {
+		audioMap[a.ID] = a
+	}
+
+	var consolidated []domain.ConsolidatedHistoryItem
+	for _, aID := range uniqueAudioIDs {
+		audio, exists := audioMap[aID]
+		if !exists {
+			continue
+		}
+
+		prog := progByAudio[aID]
+		epTitle := "Tập 1"
+		epNum := 1
+		startSec := 0
+		for _, ep := range audio.Episodes {
+			if ep.ID == prog.EpisodeID {
+				epTitle = ep.Title
+				epNum = ep.EpisodeNumber
+				startSec = ep.StartSeconds
+				break
+			}
+		}
+
+		// Tính thời gian đã nghe tích luỹ qua các tập:
+		// Ví dụ Tập 1 (4h) + Tập 2 (thời lượng nghe tập 2) -> cho đến Tập N+1
+		accumulatedDuration := startSec + prog.PositionSeconds
+		if accumulatedDuration <= 0 && durMap[aID] > 0 {
+			accumulatedDuration = durMap[aID]
+		}
+
+		lastTime := prog.UpdatedAt
+		if lastTime.IsZero() {
+			lastTime = time.Now().UTC()
+		}
+
+		item := domain.ConsolidatedHistoryItem{
+			AudioID:               audio.ID,
+			Title:                 audio.Title,
+			Author:                audio.Author,
+			ThumbnailURL:          audio.ThumbnailURL,
+			TotalEpisodes:         len(audio.Episodes),
+			CurrentEpisodeID:      prog.EpisodeID,
+			CurrentEpisodeNumber:  epNum,
+			CurrentEpisodeTitle:   epTitle,
+			LastPositionSeconds:   prog.PositionSeconds,
+			DurationSeconds:       prog.DurationSeconds,
+			ProgressPercent:       prog.ProgressPercent,
+			FormattedPosition:     logic.FormatTime(prog.PositionSeconds),
+			TotalDurationListened: accumulatedDuration,
+			LastListenedAt:        lastTime,
+		}
+		consolidated = append(consolidated, item)
+	}
+
+	response.OK(c, consolidated, nil)
+}
+
+func (h *Handler) RecordHistory(c *gin.Context) {
+	userID := middleware.GetCurrentUserID(c)
+	var req RecordHistoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Dữ liệu lịch sử không hợp lệ")
+		return
+	}
+
+	// Chỉ lưu nhật ký nếu nghe >= 30 giây
+	if req.DurationListened < 30 {
+		response.OK(c, gin.H{"recorded": false, "reason": "duration < 30s"}, nil)
+		return
+	}
+
+	hist := domain.ListeningHistory{
+		UserID:           userID,
+		AudioID:          req.AudioID,
+		EpisodeID:        req.EpisodeID,
+		DurationListened: req.DurationListened,
+		StartedAt:        time.Now().UTC().Add(-time.Duration(req.DurationListened) * time.Second),
+		CreatedAt:        time.Now().UTC(),
+	}
+
+	if err := h.db.Create(&hist).Error; err != nil {
+		response.Internal(c, "Lỗi ghi nhật ký lịch sử")
+		return
+	}
+
+	response.Created(c, hist)
+}

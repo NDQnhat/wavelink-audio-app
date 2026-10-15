@@ -1,0 +1,601 @@
+package audio
+
+import (
+	"fmt"
+	"math"
+	"strconv"
+	"strings"
+	"time"
+
+	"audio-app-backend/core/domain"
+	"audio-app-backend/core/logic"
+	"audio-app-backend/infra/external"
+	"audio-app-backend/server/middleware"
+	"audio-app-backend/server/response"
+
+	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
+	"gorm.io/gorm"
+)
+
+type Handler struct {
+	db *gorm.DB
+}
+
+func NewHandler(db *gorm.DB) *Handler {
+	return &Handler{db: db}
+}
+
+type ImportYouTubeRequest struct {
+	URL              string   `json:"url" binding:"required"`
+	CategoryID       uint     `json:"categoryId"`
+	Tags             []string `json:"tags"`
+	DurationSeconds  int      `json:"durationSeconds"`
+	BlockSizeSeconds int      `json:"blockSizeSeconds"`
+}
+
+type UpdateAudioRequest struct {
+	Title       string `json:"title"`
+	Author      string `json:"author"`
+	Description string `json:"description"`
+	CategoryID  uint   `json:"categoryId"`
+	Status      string `json:"status"`
+	IsVIPOnly   *bool  `json:"isVipOnly"`
+}
+
+func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
+	audios := rg.Group("/audios")
+	{
+		audios.GET("", h.ListAudios)
+		audios.GET("/preview-youtube", h.PreviewYouTube)
+		audios.POST("/preview-youtube", h.PreviewYouTube)
+		audios.GET("/:id", h.GetAudioByID)
+		audios.POST("/import-youtube", middleware.RequireAuth(), h.ImportYouTube)
+		audios.PUT("/:id", middleware.RequireAuth(), h.UpdateAudio)
+		audios.DELETE("/:id", middleware.RequireAuth(), middleware.RequireAdmin(), h.DeleteAudio)
+		audios.POST("/:id/refresh", middleware.RequireAuth(), h.RefreshAudio)
+	}
+}
+
+func (h *Handler) ListAudios(c *gin.Context) {
+	userID := middleware.GetCurrentUserID(c)
+	search := strings.TrimSpace(c.Query("search"))
+	catIDStr := c.Query("categoryId")
+	tag := strings.TrimSpace(c.Query("tag"))
+	status := strings.TrimSpace(c.Query("status")) // "listening", "completed", "favorite", "my"
+	sortBy := strings.TrimSpace(c.Query("sort"))   // "popular", "latest", etc.
+
+	// Phân trang chuẩn hóa (Pagination)
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+	limit, err := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if err != nil || limit < 1 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	query := h.db.Model(&domain.Audio{}).Preload("Category").Preload("Tags")
+
+	if search != "" {
+		likePattern := "%" + search + "%"
+		query = query.Where("youtube_videos.title LIKE ? OR youtube_videos.author_name LIKE ? OR youtube_videos.youtube_video_id LIKE ?", likePattern, likePattern, likePattern)
+	}
+
+	if catIDStr != "" {
+		if catID, err := strconv.ParseUint(catIDStr, 10, 32); err == nil && catID > 0 {
+			query = query.Where("youtube_videos.category_id = ?", catID)
+		}
+	}
+
+	if tag != "" {
+		query = query.Joins("JOIN audio_tags ON audio_tags.audio_id = youtube_videos.id").
+			Joins("JOIN tags ON tags.id = audio_tags.tag_id").
+			Where("tags.name = ? OR tags.slug = ?", tag, tag)
+	}
+
+	// Lọc trạng thái tại tầng SQL (Triệt tiêu việc duyệt vòng lặp trên RAM và chống nhân bản bản ghi)
+	if status == "favorite" && userID > 0 {
+		query = query.Where("youtube_videos.id IN (SELECT DISTINCT audio_id FROM favorites WHERE user_id = ?)", userID)
+	} else if status == "listening" && userID > 0 {
+		query = query.Where("youtube_videos.id IN (SELECT DISTINCT audio_id FROM listening_progress WHERE user_id = ? AND progress_percent > 0 AND (progress_percent < 95 OR completed = 0))", userID)
+	} else if status == "completed" && userID > 0 {
+		query = query.Where("youtube_videos.id IN (SELECT DISTINCT audio_id FROM listening_progress WHERE user_id = ? AND (progress_percent >= 95 OR completed = 1))", userID)
+	} else if (status == "my" || c.Query("my") == "true") && userID > 0 {
+		query = query.Where("youtube_videos.created_by = ?", userID)
+	}
+
+	// Đếm tổng số bản ghi phù hợp
+	var totalCount int64
+	if err := query.Count(&totalCount).Error; err != nil {
+		response.Internal(c, "Lỗi đếm số lượng Audio: "+err.Error())
+		return
+	}
+
+	var audios []domain.Audio
+	offset := (page - 1) * limit
+	if sortBy == "popular" {
+		query = query.Select("youtube_videos.*").
+			Joins("LEFT JOIN (SELECT audio_id, COUNT(DISTINCT user_id) as v_cnt FROM listening_progress WHERE progress_percent >= 15.0 GROUP BY audio_id) vp ON vp.audio_id = youtube_videos.id").
+			Order("COALESCE(vp.v_cnt, 0) DESC, youtube_videos.created_at DESC")
+	} else {
+		query = query.Order("youtube_videos.created_at DESC")
+	}
+
+	if err := query.Offset(offset).Limit(limit).Find(&audios).Error; err != nil {
+		response.Internal(c, "Lỗi truy vấn danh sách Audio: "+err.Error())
+		return
+	}
+
+	if len(audios) == 0 {
+		response.OK(c, []domain.Audio{}, gin.H{
+			"total":      totalCount,
+			"page":       page,
+			"limit":      limit,
+			"totalPages": int(math.Ceil(float64(totalCount) / float64(limit))),
+		})
+		return
+	}
+
+	audioIDs := lo.Map(audios, func(a domain.Audio, _ int) uint { return a.ID })
+
+	// Tối ưu N+1: Lấy danh sách episodes theo batch
+	var allEpisodes []domain.Episode
+	h.db.Where("audio_id IN ?", audioIDs).Order("episode_number ASC").Find(&allEpisodes)
+	episodesByAudio := lo.GroupBy(allEpisodes, func(ep domain.Episode) uint { return ep.AudioID })
+
+	// Tối ưu N+1: Lấy danh sách favorites theo batch
+	favMap := make(map[uint]bool)
+	if userID > 0 {
+		var favs []domain.Favorite
+		h.db.Where("user_id = ? AND audio_id IN ?", userID, audioIDs).Find(&favs)
+		for _, f := range favs {
+			favMap[f.AudioID] = true
+		}
+	}
+
+	// Tối ưu N+1: Lấy tiến trình nghe theo batch
+	var progs []domain.ListeningProgress
+	if userID > 0 {
+		h.db.Where("user_id = ? AND audio_id IN ?", userID, audioIDs).
+			Order("updated_at DESC").
+			Find(&progs)
+	}
+	progressByAudio := lo.GroupBy(progs, func(p domain.ListeningProgress) uint { return p.AudioID })
+
+	// Lấy số lượt xem (View Count): 1 user nghe >= 15% của 1 tập = 1 view duy nhất cho audio, không cộng dồn của 1 user
+	type AudioViewStat struct {
+		AudioID uint  `gorm:"column:audio_id"`
+		Views   int64 `gorm:"column:views"`
+	}
+	var viewStats []AudioViewStat
+	if len(audioIDs) > 0 {
+		h.db.Model(&domain.ListeningProgress{}).
+			Select("audio_id, COUNT(DISTINCT user_id) as views").
+			Where("audio_id IN ? AND progress_percent >= 15.0", audioIDs).
+			Group("audio_id").
+			Scan(&viewStats)
+	}
+	viewMap := make(map[uint]int64, len(viewStats))
+	for _, vs := range viewStats {
+		viewMap[vs.AudioID] = vs.Views
+	}
+
+	// Enrich dữ liệu sạch sẽ, chuẩn xác cho cả UI trang chủ, thư viện và player
+	result := make([]domain.Audio, 0, len(audios))
+	for _, a := range audios {
+		a.ViewCount = viewMap[a.ID]
+		a.TagNames = lo.Map(a.Tags, func(t domain.Tag, _ int) string { return t.Name })
+		if a.Category != nil {
+			a.CategoryName = a.Category.Name
+		}
+		a.FormattedDuration = logic.FormatDuration(a.TotalDurationSeconds)
+		a.IsFavorite = favMap[a.ID]
+
+		epsForAudio := episodesByAudio[a.ID]
+		progsForAudio := progressByAudio[a.ID]
+		progressByEp := lo.KeyBy(progsForAudio, func(p domain.ListeningProgress) uint { return p.EpisodeID })
+
+		// Gắn tiến trình chi tiết vào từng episode
+		for i := range epsForAudio {
+			if p, found := progressByEp[epsForAudio[i].ID]; found {
+				epsForAudio[i].Completed = p.Completed
+				epsForAudio[i].ProgressPercent = p.ProgressPercent
+				epsForAudio[i].PositionSeconds = p.PositionSeconds
+			}
+		}
+		a.Episodes = epsForAudio
+		a.TotalEpisodes = len(epsForAudio)
+
+		// Tính Resume State chuẩn xác theo UpdatedAt mới nhất
+		resume := logic.CalculateResumeState(a, epsForAudio, progsForAudio)
+		a.LastPositionSeconds = resume.LastPositionSeconds
+		a.ProgressPercent = resume.ProgressPercent
+		a.FormattedPosition = resume.FormattedPosition
+		a.CurrentEpisodeID = resume.CurrentEpisodeID
+		a.CurrentEpisodeNumber = resume.CurrentEpisodeNumber
+		a.CurrentEpisodeTitle = resume.CurrentEpisodeTitle
+
+		result = append(result, a)
+	}
+
+	totalPages := int(math.Ceil(float64(totalCount) / float64(limit)))
+	response.OK(c, result, gin.H{
+		"total":      totalCount,
+		"page":       page,
+		"limit":      limit,
+		"totalPages": totalPages,
+	})
+}
+
+func (h *Handler) GetAudioByID(c *gin.Context) {
+	id := c.Param("id")
+	userID := middleware.GetCurrentUserID(c)
+
+	var audio domain.Audio
+	if err := h.db.Preload("Category").Preload("Tags").First(&audio, id).Error; err != nil {
+		response.NotFound(c, "Không tìm thấy Audio")
+		return
+	}
+
+	// 1. Kiểm soát quyền truy cập nội dung VIP (VIP Access Check)
+	var currentUser domain.User
+	if userID > 0 {
+		h.db.First(&currentUser, userID)
+	} else {
+		currentUser = domain.User{Role: domain.RoleGuest, IsGuest: true, Membership: domain.MembershipFree}
+	}
+
+	if can, msg := logic.CanAccessAudio(currentUser, audio); !can {
+		response.Forbidden(c, msg)
+		return
+	}
+
+	// Lấy danh sách episodes
+	var episodes []domain.Episode
+	h.db.Where("audio_id = ?", audio.ID).Order("episode_number ASC").Find(&episodes)
+
+	// Lấy danh sách progress của user cho các episodes này
+	var progresses []domain.ListeningProgress
+	if userID > 0 {
+		h.db.Where("user_id = ? AND audio_id = ?", userID, audio.ID).Find(&progresses)
+	}
+	progressByEp := lo.KeyBy(progresses, func(p domain.ListeningProgress) uint {
+		return p.EpisodeID
+	})
+
+	// Gắn progress vào từng episode
+	for i := range episodes {
+		if p, found := progressByEp[episodes[i].ID]; found {
+			episodes[i].Completed = p.Completed
+			episodes[i].ProgressPercent = p.ProgressPercent
+			episodes[i].PositionSeconds = p.PositionSeconds
+		}
+	}
+	audio.Episodes = episodes
+	audio.TotalEpisodes = len(episodes)
+	audio.TagNames = lo.Map(audio.Tags, func(t domain.Tag, _ int) string { return t.Name })
+	if audio.Category != nil {
+		audio.CategoryName = audio.Category.Name
+	}
+	audio.FormattedDuration = logic.FormatDuration(audio.TotalDurationSeconds)
+
+	// Kiểm tra Favorite
+	if userID > 0 {
+		var favCount int64
+		h.db.Model(&domain.Favorite{}).Where("user_id = ? AND audio_id = ?", userID, audio.ID).Count(&favCount)
+		audio.IsFavorite = favCount > 0
+	}
+
+	// Tính Resume State chuẩn xác bằng Pure Function
+	resume := logic.CalculateResumeState(audio, episodes, progresses)
+	audio.LastPositionSeconds = resume.LastPositionSeconds
+	audio.ProgressPercent = resume.ProgressPercent
+	audio.FormattedPosition = resume.FormattedPosition
+	audio.CurrentEpisodeID = resume.CurrentEpisodeID
+	audio.CurrentEpisodeNumber = resume.CurrentEpisodeNumber
+	// Lấy số lượt xem (View Count): 1 user nghe >= 15% của 1 tập = 1 view duy nhất, không cộng dồn của 1 user
+	var viewCount int64
+	h.db.Model(&domain.ListeningProgress{}).
+		Where("audio_id = ? AND progress_percent >= 15.0", audio.ID).
+		Distinct("user_id").
+		Count(&viewCount)
+	audio.ViewCount = viewCount
+
+	response.OK(c, audio, nil)
+}
+
+func (h *Handler) ImportYouTube(c *gin.Context) {
+	userID := middleware.GetCurrentUserID(c)
+	var currentUser domain.User
+	h.db.First(&currentUser, userID)
+
+	// 1. Kiểm tra chính sách hạn mức ngày theo user_id và mốc 00:00 UTC của ngày hôm nay
+	startOfToday := time.Now().UTC().Truncate(24 * time.Hour)
+	var todayCount int64
+	h.db.Model(&domain.Audio{}).
+		Where("created_by = ? AND created_at >= ?", currentUser.ID, startOfToday).
+		Count(&todayCount)
+
+	if can, msg := logic.CanImportYouTube(currentUser, int(todayCount)); !can {
+		response.Forbidden(c, msg)
+		return
+	}
+
+	var req ImportYouTubeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "URL YouTube không được để trống")
+		return
+	}
+
+	// 2. Pure Regex bóc tách Video ID
+	videoIDRes := logic.ExtractYouTubeVideoID(req.URL)
+	if videoIDRes.IsError() {
+		response.BadRequest(c, videoIDRes.Error().Error())
+		return
+	}
+	videoID := videoIDRes.MustGet()
+
+	// 3. Kiểm tra trùng lặp
+	var existing domain.Audio
+	if err := h.db.Preload("Category").Preload("Tags").Preload("Episodes").Where("youtube_video_id = ?", videoID).First(&existing).Error; err == nil {
+		existing.TotalEpisodes = len(existing.Episodes)
+		existing.FormattedDuration = logic.FormatDuration(existing.TotalDurationSeconds)
+		existing.TagNames = lo.Map(existing.Tags, func(t domain.Tag, _ int) string { return t.Name })
+		if existing.Category != nil {
+			existing.CategoryName = existing.Category.Name
+		}
+		response.OK(c, gin.H{
+			"duplicate": true,
+			"message":   "Video này đã tồn tại trong thư viện",
+			"audio":     existing,
+		}, nil)
+		return
+	}
+
+	// 4. Lấy Metadata từ oEmbed (0% quota)
+	meta, err := external.FetchYouTubeMetadata(videoID)
+	if err != nil {
+		response.Internal(c, "Không thể lấy thông tin từ YouTube: "+err.Error())
+		return
+	}
+
+	// 5. Suy luận thời lượng (Duration Inference)
+	duration := external.InferDurationFromMetadata(meta, req.DurationSeconds)
+
+	// 6. Transactional Persistence (GORM Atomic Transaction)
+	var newAudio domain.Audio
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		newAudio = domain.Audio{
+			YoutubeVideoID:       videoID,
+			YoutubeURL:           fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID),
+			Title:                meta.Title,
+			Author:               meta.Author,
+			ThumbnailURL:         meta.ThumbnailURL,
+			TotalDurationSeconds: duration,
+			CategoryID:           req.CategoryID,
+			Status:               domain.StatusActive,
+			CreatedBy:            currentUser.ID, // Ghi nhận ID người nhập
+		}
+
+		if err := tx.Create(&newAudio).Error; err != nil {
+			return err
+		}
+
+		// Chia các tập logic dựa trên thiết lập của người dùng (2h, 4h, v.v.)
+		blockSize := req.BlockSizeSeconds
+		if blockSize <= 0 {
+			blockSize = 14400 // Mặc định 4h nếu không truyền
+		}
+		epDrafts := logic.ComputeLogicalEpisodes(newAudio.ID, duration, blockSize)
+		for _, draft := range epDrafts {
+			ep := domain.Episode{
+				AudioID:         newAudio.ID,
+				EpisodeNumber:   draft.EpisodeNumber,
+				Title:           draft.Title,
+				StartSeconds:    draft.StartSeconds,
+				EndSeconds:      draft.EndSeconds,
+				DurationSeconds: draft.DurationSeconds,
+			}
+			if err := tx.Create(&ep).Error; err != nil {
+				return err
+			}
+		}
+
+		// Gắn tags tương thích chuẩn GORM Association (Hoàn toàn không dùng raw SQL INSERT OR IGNORE)
+		var tagsToAdd []domain.Tag
+		for _, tagName := range req.Tags {
+			tagName = strings.TrimSpace(tagName)
+			if tagName == "" {
+				continue
+			}
+			var tag domain.Tag
+			slug := strings.ToLower(strings.ReplaceAll(tagName, " ", "-"))
+			tx.Where(domain.Tag{Name: tagName}).Attrs(domain.Tag{Slug: slug}).FirstOrCreate(&tag)
+			tagsToAdd = append(tagsToAdd, tag)
+		}
+
+		if len(tagsToAdd) > 0 {
+			if err := tx.Model(&newAudio).Association("Tags").Append(tagsToAdd); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		response.Internal(c, "Lỗi lưu trữ Audio: "+err.Error())
+		return
+	}
+
+	// Trả về Audio hoàn chỉnh
+	h.db.Preload("Category").Preload("Tags").Preload("Episodes").First(&newAudio, newAudio.ID)
+	newAudio.TotalEpisodes = len(newAudio.Episodes)
+	newAudio.FormattedDuration = logic.FormatDuration(newAudio.TotalDurationSeconds)
+
+	response.Created(c, gin.H{
+		"audio":     newAudio,
+		"duplicate": false,
+	})
+}
+
+func (h *Handler) UpdateAudio(c *gin.Context) {
+	id := c.Param("id")
+	userID := middleware.GetCurrentUserID(c)
+	userRole := middleware.GetCurrentUserRole(c)
+
+	var audio domain.Audio
+	if err := h.db.First(&audio, id).Error; err != nil {
+		response.NotFound(c, "Không tìm thấy Audio")
+		return
+	}
+
+	// Phân quyền chặt chẽ: Phải là ADMIN hoặc chính người tạo Audio (Owner)
+	if userRole != domain.RoleAdmin && (audio.CreatedBy == 0 || audio.CreatedBy != userID) {
+		response.Forbidden(c, "Bạn không có quyền chỉnh sửa Audio này")
+		return
+	}
+
+	var req UpdateAudioRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Dữ liệu không hợp lệ")
+		return
+	}
+
+	updates := map[string]interface{}{}
+	if req.Title != "" {
+		updates["title"] = req.Title
+	}
+	if req.Author != "" {
+		updates["author_name"] = req.Author
+	}
+	if req.Description != "" {
+		updates["description"] = req.Description
+	}
+	if req.CategoryID > 0 {
+		updates["category_id"] = req.CategoryID
+	}
+	if req.Status != "" {
+		updates["status"] = req.Status
+	}
+	if req.IsVIPOnly != nil {
+		updates["is_vip_only"] = *req.IsVIPOnly
+	}
+
+	if err := h.db.Model(&audio).Updates(updates).Error; err != nil {
+		response.Internal(c, "Không thể cập nhật Audio")
+		return
+	}
+
+	h.db.Preload("Category").Preload("Tags").First(&audio, id)
+	response.OK(c, audio, nil)
+}
+
+func (h *Handler) DeleteAudio(c *gin.Context) {
+	id := c.Param("id")
+	userID := middleware.GetCurrentUserID(c)
+	userRole := middleware.GetCurrentUserRole(c)
+
+	var audio domain.Audio
+	if err := h.db.First(&audio, id).Error; err != nil {
+		response.NotFound(c, "Không tìm thấy Audio")
+		return
+	}
+
+	// Phân quyền chặt chẽ: Phải là ADMIN hoặc chính người tạo Audio (Owner)
+	if userRole != domain.RoleAdmin && (audio.CreatedBy == 0 || audio.CreatedBy != userID) {
+		response.Forbidden(c, "Bạn không có quyền xóa Audio này")
+		return
+	}
+
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		// 1. Xóa các quan hệ many-to-many trong bảng audio_tags
+		if err := tx.Exec("DELETE FROM audio_tags WHERE audio_id = ?", audio.ID).Error; err != nil {
+			return fmt.Errorf("lỗi xóa quan hệ thẻ (audio_tags): %w", err)
+		}
+
+		// 2. Xóa tiến độ nghe (listening_progress) liên quan
+		if err := tx.Exec("DELETE FROM listening_progress WHERE audio_id = ?", audio.ID).Error; err != nil {
+			return fmt.Errorf("lỗi xóa tiến độ nghe: %w", err)
+		}
+
+		// 3. Xóa lịch sử nghe (listening_history) liên quan
+		if err := tx.Exec("DELETE FROM listening_history WHERE audio_id = ?", audio.ID).Error; err != nil {
+			return fmt.Errorf("lỗi xóa lịch sử nghe: %w", err)
+		}
+
+		// 4. Xóa yêu thích (favorites) liên quan
+		if err := tx.Exec("DELETE FROM favorites WHERE audio_id = ?", audio.ID).Error; err != nil {
+			return fmt.Errorf("lỗi xóa yêu thích: %w", err)
+		}
+
+		// 5. Xóa các tập logic (episodes) liên quan
+		if err := tx.Exec("DELETE FROM episodes WHERE audio_id = ?", audio.ID).Error; err != nil {
+			return fmt.Errorf("lỗi xóa danh sách tập: %w", err)
+		}
+
+		// 6. Xóa bản ghi audio chính trong bảng youtube_videos
+		if err := tx.Delete(&audio).Error; err != nil {
+			return fmt.Errorf("lỗi xóa bản ghi audio: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		response.Internal(c, "Không thể xóa Audio: "+err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "Đã xóa Audio thành công"}, nil)
+}
+
+func (h *Handler) RefreshAudio(c *gin.Context) {
+	id := c.Param("id")
+	var audio domain.Audio
+	if err := h.db.First(&audio, id).Error; err != nil {
+		response.NotFound(c, "Không tìm thấy Audio")
+		return
+	}
+
+	meta, err := external.FetchYouTubeMetadata(audio.YoutubeVideoID)
+	if err == nil {
+		h.db.Model(&audio).Updates(map[string]interface{}{
+			"title":         meta.Title,
+			"author_name":   meta.Author,
+			"thumbnail_url": meta.ThumbnailURL,
+		})
+	}
+
+	h.db.Preload("Category").Preload("Tags").First(&audio, id)
+	response.OK(c, audio, nil)
+}
+
+func (h *Handler) PreviewYouTube(c *gin.Context) {
+	url := c.Query("url")
+	if url == "" {
+		var req struct {
+			URL string `json:"url"`
+		}
+		if err := c.ShouldBindJSON(&req); err == nil {
+			url = req.URL
+		}
+	}
+
+	videoIDRes := logic.ExtractYouTubeVideoID(url)
+	if videoIDRes.IsError() {
+		response.BadRequest(c, videoIDRes.Error().Error())
+		return
+	}
+	videoID := videoIDRes.MustGet()
+
+	meta, err := external.FetchYouTubeMetadata(videoID)
+	if err != nil {
+		response.Internal(c, "Lỗi lấy thông tin YouTube: "+err.Error())
+		return
+	}
+
+	response.OK(c, meta, nil)
+}

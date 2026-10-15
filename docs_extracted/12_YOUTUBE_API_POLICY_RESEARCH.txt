@@ -1,7 +1,0 @@
-12. YOUTUBE API & POLICY COMPLIANCE RESEARCH
-Nghiên Cứu Chuyên Sâu YouTube Data API v3 & Developer Policies
-―――――――――――――――――――――――――――――――――――――――――――――
-1. Nguồn Dữ Liệu Tra Cứu & Trích Dẫn Chính Thức
-• FACT: YouTube Developer Policies Mục III.E cấm rõ ràng việc tách riêng luồng audio khỏi video (stream-ripping) để lưu trữ hoặc phân phối lại.
-• FACT: YouTube Data API v3 hạn mức mặc định 10,000 units/ngày. Endpoint videos.list tiêu tốn 1 unit/request.
-• RECOMMENDATION: Sử dụng YouTube IFrame Player API cho phát nhạc và oEmbed cho metadata ban đầu là giải pháp 100% hợp pháp và bền vững.

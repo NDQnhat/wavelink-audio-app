@@ -1,9 +1,0 @@
-08. SEARCH & FILTER ARCHITECTURE
-Thiết Kế Tìm Kiếm Toàn Văn, Đa Tiêu Chí & Phân Trang Hiệu Suất Cao
-―――――――――――――――――――――――――――――――――――――――――――――
-1. Chiến Lược Tìm Kiếm Server-Side (Không Load Toàn Bộ Dữ Liệu Về Client)
-Để đảm bảo máy chủ yếu không bị quá tải bộ nhớ và điện thoại người dùng không bị đơ giật khi thư viện có hàng nghìn bài, tất cả thao tác Tìm kiếm và Lọc bắt buộc phải thực thi tại Backend thông qua MySQL và phân trang cứng (Pagination).
-2. Câu Lệnh Truy Vấn MySQL Tối Ưu Cho Tìm Kiếm & Lọc
-
---- TABLE 1 ---
-SELECT      v.id, v.youtube_video_id, v.title, v.author_name, v.thumbnail_url,      v.duration_seconds, c.name AS category_name,     COUNT(e.id) AS total_episodes,     lp.position_seconds AS last_position,     lp.episode_id AS last_episode_id,     lp.progress_percent FROM youtube_videos v LEFT JOIN categories c ON v.category_id = c.id LEFT JOIN episodes e ON v.id = e.audio_id LEFT JOIN listening_progress lp ON v.id = lp.audio_id AND lp.user_id = ? WHERE v.status = 'ACTIVE'   -- Điều kiện lọc Category (nếu có)   AND (? IS NULL OR v.category_id = ?)   -- Điều kiện lọc Tìm kiếm FULLTEXT (nếu có)   AND (? IS NULL OR MATCH(v.title, v.author_name) AGAINST(? IN NATURAL LANGUAGE MODE)) GROUP BY v.id, lp.id ORDER BY v.created_at DESC LIMIT 20 OFFSET 0;

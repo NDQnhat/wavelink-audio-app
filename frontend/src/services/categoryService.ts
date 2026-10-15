@@ -1,0 +1,83 @@
+import { axiosClient } from '@/lib/axiosClient';
+import { Category, CreateCategoryPayload } from '@/types';
+import { localDb } from './localDb';
+
+export const categoryService = {
+  async getCategories(isLive = true): Promise<Category[]> {
+    if (isLive) {
+      try {
+        const res = await axiosClient.get<{ success: boolean; data: Category[] }>('/categories');
+        if (res.data.success && Array.isArray(res.data.data)) {
+          return res.data.data;
+        }
+      } catch (err) {
+        console.warn('getCategories live API failed, fallback to local', err);
+      }
+    }
+    const db = localDb.get();
+    return db.categories || [];
+  },
+
+  async createCategory(payload: CreateCategoryPayload, isLive = true): Promise<Category> {
+    if (isLive) {
+      try {
+        const res = await axiosClient.post<{ success: boolean; data: Category }>('/categories', payload);
+        if (res.data.success && res.data.data) {
+          return res.data.data;
+        }
+      } catch (err) {
+        console.warn('createCategory live API failed', err);
+      }
+    }
+
+    const db = localDb.get();
+    const newCat: Category = {
+      id: Date.now(),
+      name: payload.name,
+      slug: payload.slug || payload.name.toLowerCase().replace(/\s+/g, '-'),
+      description: payload.description || '',
+      count: 0,
+    };
+    db.categories.push(newCat);
+    localDb.save();
+    return newCat;
+  },
+
+  async updateCategory(id: number | string, data: Partial<Category>, isLive = true): Promise<Category | null> {
+    if (isLive) {
+      try {
+        const res = await axiosClient.put<{ success: boolean; data: Category }>(`/categories/${id}`, data);
+        if (res.data.success && res.data.data) {
+          return res.data.data;
+        }
+      } catch (err) {
+        console.warn('updateCategory live API failed', err);
+      }
+    }
+
+    const db = localDb.get();
+    const idx = db.categories.findIndex((c) => String(c.id) === String(id));
+    if (idx !== -1) {
+      db.categories[idx] = { ...db.categories[idx], ...data };
+      localDb.save();
+      return db.categories[idx];
+    }
+    return null;
+  },
+
+  async deleteCategory(id: number | string, isLive = true): Promise<boolean> {
+    if (isLive) {
+      try {
+        const res = await axiosClient.delete<{ success: boolean }>(`/categories/${id}`);
+        if (res.data.success) return true;
+      } catch (err) {
+        console.warn('deleteCategory live API failed', err);
+      }
+    }
+
+    const db = localDb.get();
+    db.categories = db.categories.filter((c) => String(c.id) !== String(id));
+    localDb.save();
+    return true;
+  },
+};

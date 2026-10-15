@@ -8,17 +8,17 @@
 
 ---
 
-## 1. BỘ TÀI LIỆU GỐC DUY NHẤT (4 FILE DOCX TRỌNG TÂM)
+## 1. BỘ TÀI LIỆU TRỌNG TÂM (ĐỊNH DẠNG MARKDOWN)
 
-Tất cả các tài liệu cũ, rườm rà, phân mảnh đã được **lưu trữ an toàn vào thư mục `docs_archive/`**.  
-Thư mục chính [`docs/`](file:///c:/Users/trand/Downloads/Audio-app-vanila/docs) hiện tại chỉ lưu trữ đúng **4 tài liệu hợp nhất, dễ đọc, dễ hiểu và dễ maintain nhất**:
+Thư mục chính [`docs/`](file:///c:/Users/trand/Downloads/Audio-app-vanila/docs) lưu trữ các tài liệu kiến trúc chuẩn hóa định dạng Markdown:
 
-| STT | File Tài Liệu (.docx) | Nội Dung Trọng Tâm & Phạm Vi Duy Trì |
+| STT | File Tài Liệu (.md) | Nội Dung Trọng Tâm & Phạm Vi Duy Trì |
 |:---:|:---|:---|
-| **01** | [01_HE_THONG_VA_KIEN_TRUC_TONG_THE.docx](file:///c:/Users/trand/Downloads/Audio-app-vanila/docs/01_HE_THONG_VA_KIEN_TRUC_TONG_THE.docx) | **Kiến trúc tổng thể & Nguyên lý bất biến:** Định vị hệ thống, topology tách biệt Frontend/Backend, bảng phân bổ ngân sách RAM VPS 1GB và 8 quyết định kỹ thuật cốt lõi (ADRs). |
-| **02** | [02_CSDL_MYSQL_VA_DONG_BO_TIEN_TRINH.docx](file:///c:/Users/trand/Downloads/Audio-app-vanila/docs/02_CSDL_MYSQL_VA_DONG_BO_TIEN_TRINH.docx) | **Database & Tiến trình:** Mã nguồn DDL 8 bảng MySQL chuẩn hóa (3NF), ERD, thuật toán sinh Logical Episode (khối 4h) cho video > 24h, cơ chế UPSERT progress 60s và xử lý ngoại tuyến. |
-| **03** | [03_DAC_TA_REST_API_VA_XU_LY_YOUTUBE.docx](file:///c:/Users/trand/Downloads/Audio-app-vanila/docs/03_DAC_TA_REST_API_VA_XU_LY_YOUTUBE.docx) | **API & Tích hợp YouTube:** Đặc tả 13 REST API endpoints v1 chuẩn hóa, Regex khử độc URL chống SSRF, cơ chế oEmbed 0% quota và tích hợp YouTube IFrame Player API. |
-| **04** | [04_TRIEN_KHAI_BAO_MAT_VA_VAN_HANH.docx](file:///c:/Users/trand/Downloads/Audio-app-vanila/docs/04_TRIEN_KHAI_BAO_MAT_VA_VAN_HANH.docx) | **Triển khai & Vận hành:** Cấu hình Nginx reverse proxy, Rate limiting, SSL Let's Encrypt, file cấu hình systemd khống chế RAM, kịch bản cron backup MySQL ra Cloudflare R2 và sprint plan. |
+| **01** | [01_HE_THONG_VA_KIEN_TRUC_TONG_THE.md](file:///c:/Users/trand/Downloads/Audio-app-vanila/docs/01_HE_THONG_VA_KIEN_TRUC_TONG_THE.md) | **Kiến trúc tổng thể & Nguyên lý bất biến:** Định vị hệ thống, topology tách biệt Frontend/Backend, bảng phân bổ ngân sách RAM VPS 1GB và quyết định kỹ thuật cốt lõi (ADRs). |
+| **02** | [02_CSDL_MYSQL_VA_DONG_BO_TIEN_TRINH.md](file:///c:/Users/trand/Downloads/Audio-app-vanila/docs/02_CSDL_MYSQL_VA_DONG_BO_TIEN_TRINH.md) | **Database & Tiến trình:** Mã nguồn DDL 8 bảng chuẩn hóa (3NF), ERD, thuật toán sinh Logical Episode (khối 4h) cho video > 24h, cơ chế UPSERT progress 60s và xử lý ngoại tuyến. |
+| **03** | [03_DAC_TA_REST_API_VA_XU_LY_YOUTUBE.md](file:///c:/Users/trand/Downloads/Audio-app-vanila/docs/03_DAC_TA_REST_API_VA_XU_LY_YOUTUBE.md) | **API & Tích hợp YouTube:** Đặc tả 13 REST API endpoints v1 chuẩn hóa, Regex khử độc URL chống SSRF, cơ chế oEmbed 0% quota và tích hợp YouTube IFrame Player API. |
+| **04** | [04_TRIEN_KHAI_BAO_MAT_VA_VAN_HANH.md](file:///c:/Users/trand/Downloads/Audio-app-vanila/docs/04_TRIEN_KHAI_BAO_MAT_VA_VAN_HANH.md) | **Triển khai & Vận hành:** Cấu hình Nginx reverse proxy, Rate limiting, SSL Let's Encrypt, file cấu hình systemd khống chế RAM, kịch bản cron backup. |
+| **05** | [kiemdinh01.md](file:///c:/Users/trand/Downloads/Audio-app-vanila/docs/kiemdinh01.md) | **Báo cáo kiểm định kiến trúc & 14 bản vá Backend:** Triệt tiêu N+1 query, bảo vệ RAM, SQLite WAL, Rate limiting. |
 
 ---
 

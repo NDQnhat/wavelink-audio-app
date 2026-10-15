@@ -1,6 +1,0 @@
-04. TRIỂN KHAI, BẢO MẬT & VẬN HÀNH
-Hướng Dẫn Cấu Hình Nginx, Systemd, Backup R2 & Lộ Trình Triển Khai MVP
-―――――――――――――――――――――――――――――――――――――――――――――
-1. File Cấu Hình Nginx Hoàn Chỉnh Chuẩn Production
-2. Cấu Hình Systemd Service Quản Lý Go Backend
-3. Kịch Bản Tự Động Sao Lưu MySQL Hàng Ngày Ra Cloudflare R2
