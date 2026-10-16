@@ -8,7 +8,10 @@ FROM golang:1.24-alpine AS builder
 WORKDIR /build
 
 # Cài đặt chứng chỉ CA và công cụ biên dịch
-RUN apk add --no-cache git ca-certificates tzdata
+RUN apk add --no-cache git ca-certificates tzdata libc6-compat
+
+# Cố định sử dụng Go toolchain cục bộ của container, ngăn tải binary glibc ngoài
+ENV GOTOOLCHAIN=local
 
 # Cache Go modules
 COPY go.mod go.sum ./
