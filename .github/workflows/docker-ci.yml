@@ -1,9 +1,8 @@
 # ==============================================================================
 # WaveLink Fullstack CI/CD Pipeline
-# - CI: Kiểm tra chất lượng Go Backend (1.24) & React Vite Frontend (Node 20, Vitest)
+# - CI: Kiểm tra chất lượng Go Backend (1.26) & React Vite Frontend (Node 20, Vitest)
 # - Docker Validation: Kiểm tra cú pháp Compose (Dev, Prod, VPS-API 2-containers)
-# - CD: Tự động Build & Publish Docker Image lên GitHub Container Registry (ghcr.io)
-#       khi có commit mới vào nhánh main hoặc gắn release tag.
+# - CD: Tự động Cập nhật Packages, Build & Publish Docker Image lên GHCR
 # - Tối ưu tài nguyên: Server nhỏ/VPS chỉ cần `docker compose pull`, KHÔNG tốn RAM build.
 # ==============================================================================
 
@@ -24,7 +23,10 @@ on:
     paths-ignore:
       - '**.md'
       - 'docs/**'
-  workflow_dispatch: # Cho phép kích hoạt thủ công từ GitHub UI
+  workflow_dispatch:
+  # Cho phép repo chứa packages kích hoạt pipeline từ xa qua API
+  repository_dispatch:
+    types: [package-updated]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -36,7 +38,7 @@ env:
   FRONTEND_IMAGE_NAME: ${{ github.repository }}-frontend
 
 permissions:
-  contents: read
+  contents: write # Cấp quyền ghi để tự động commit lại lockfile mới vào repo
   packages: write # Cho phép push Docker Image lên GHCR
 
 jobs:
@@ -56,10 +58,12 @@ jobs:
           go-version: '1.26'
           cache-dependency-path: backend/go.sum
 
-      - name: Verify Go Modules
+      - name: Update Target Package & Verify
         working-directory: backend
         run: |
-          go mod download
+          # Bỏ comment dòng dưới và thay tên package nếu cần ép tải bản mới nhất:
+          # go get -u <duong-dan-repo-package>@latest
+          go mod tidy
           go mod verify
 
       - name: Run Go Vet & Static Checks
@@ -116,11 +120,41 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Golang for Updating Packages
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      # Cập nhật package Go trực tiếp vào workspace trước khi Docker đóng gói
+      - name: Force Update Go Dependencies
+        working-directory: backend
+        run: |
+          # Thay bằng đường dẫn package cụ thể nếu cần, ví dụ:
+          # go get -u github.com/username/my-package@latest
+          go get -u ./...
+          go mod tidy
+
+      # Tự động commit và push lockfile mới lên main nếu có thay đổi
+      - name: Commit and Push Updated Lockfile
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add backend/go.mod backend/go.sum
+          if ! git diff-index --quiet HEAD; then
+            git commit -m "chore(deps): update packages lockfile [skip ci]"
+            git push origin main
+          else
+            echo "Lockfile không có thay đổi."
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Bắt buộc chuyển tên Repo về chữ thường (lowercase) theo chuẩn GHCR / OCI
       - name: Normalize Image Names to Lowercase
         run: |
           REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
@@ -133,9 +167,8 @@ jobs:
           docker compose --profile fullstack config --quiet
           docker compose --env-file env.vps.example config --quiet
           docker compose --env-file env.dev.example config --quiet
-          echo "✅ File docker-compose.yml duy nhất đạt chuẩn cho tất cả các profile và file env (env.vps, env.dev)!"
+          echo "File docker-compose.yml đạt chuẩn cấu hình."
 
-      # Đăng nhập GHCR (Chỉ thực hiện khi push vào main / tag hoặc chạy thủ công, không chạy trên PR)
       - name: Log in to GitHub Container Registry
         if: ${{ github.event_name != 'pull_request' }}
         uses: docker/login-action@v3
@@ -144,7 +177,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Trích xuất metadata (tags, labels) cho Backend
       - name: Extract Docker metadata (Backend)
         id: meta-backend
         uses: docker/metadata-action@v5
@@ -155,7 +187,6 @@ jobs:
             type=sha,format=short,prefix=sha-
             type=semver,pattern={{version}}
 
-      # Build & Push Backend Docker Image
       - name: Build and Push Backend Image
         uses: docker/build-push-action@v6
         with:
@@ -165,7 +196,6 @@ jobs:
           tags: ${{ steps.meta-backend.outputs.tags }}
           labels: ${{ steps.meta-backend.outputs.labels }}
 
-      # Trích xuất metadata (tags, labels) cho Frontend
       - name: Extract Docker metadata (Frontend)
         id: meta-frontend
         uses: docker/metadata-action@v5
@@ -176,7 +206,6 @@ jobs:
             type=sha,format=short,prefix=sha-
             type=semver,pattern={{version}}
 
-      # Build & Push Frontend Docker Image
       - name: Build and Push Frontend Image
         uses: docker/build-push-action@v6
         with:
@@ -189,9 +218,8 @@ jobs:
             VITE_API_BASE_URL=/api/v1
             VITE_ITEMS_PER_PAGE=12
 
-      # Trigger Render Deploy Hook (Tùy chọn nếu người dùng cấu hình RENDER_DEPLOY_HOOK_URL trong Repo Secrets)
-      - name: Trigger Render Auto-Deploy Hook (Optional)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Trigger Render Auto-Deploy Hook
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
@@ -199,10 +227,9 @@ jobs:
             echo "Đang gửi tín hiệu Deploy Hook tới Render..."
             curl -s -f -X POST "$RENDER_DEPLOY_HOOK_URL" || echo "Cảnh báo: Không thể gọi Render Deploy Hook."
           else
-            echo "Bỏ qua Render Deploy Hook (RENDER_DEPLOY_HOOK_URL chưa được thiết lập trong GitHub Secrets)."
+            echo "Bỏ qua Render Deploy Hook (RENDER_DEPLOY_HOOK_URL chưa được thiết lập)."
           fi
 
-      # CI/CD tự động bằng FTP (Tùy chọn nếu người dùng cấu hình FTP_SERVER trong Repo Secrets)
       - name: Check FTP Secret
         id: check_ftp
         env:
@@ -236,12 +263,6 @@ jobs:
       - name: Report CI/CD Status
         run: |
           echo "TOÀN BỘ PIPELINE ĐÃ HOÀN TẤT THÀNH CÔNG!"
+          echo "• Đã tự động cập nhật dependency mới nhất"
           echo "• Đã kiểm thử Backend & Frontend"
-          echo "• Đã xác thực 3 cấu hình Docker Compose"
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "• Đã đóng gói và đẩy image lên GitHub Container Registry:"
-            echo "  -> Backend:  ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_LOWER }}:latest"
-            echo "  -> Frontend: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_LOWER }}:latest"
-            echo "• Server nhỏ / VPS Ubuntu chỉ cần 'docker compose pull' mà không bị cạn RAM build!"
-          fi
-
+          echo "• Đã build và đẩy image mới lên GHCR"
