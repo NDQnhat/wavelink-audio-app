@@ -130,6 +130,11 @@ describe('Community Features & Integration', () => {
 
   describe('CommunityPage Sub-Tabs & Empty State', () => {
     it('renders sub-tabs and switches between Chat, Top 10, and VIP', async () => {
+      vi.spyOn(communityService, 'getTopListeners').mockResolvedValue([]);
+      vi.spyOn(communityService, 'getVipLeaderboard').mockResolvedValue([]);
+      vi.spyOn(communityService, 'getOnlineSummary').mockResolvedValue({ onlineCount: 1, vipCount: 0, totalMessages: 0 });
+      vi.spyOn(communityService, 'getMessages').mockResolvedValue([]);
+
       render(
         <MemoryRouter initialEntries={['/community']}>
           <CommunityPage />

@@ -39,6 +39,7 @@ export const CommunityPage: React.FC = () => {
   // 3. VIP Golden Board State
   const [vipMembers, setVipMembers] = useState<VipRankingMember[]>([]);
   const [loadingVip, setLoadingVip] = useState<boolean>(false);
+  const isMountedRef = useRef(true);
 
   // Handle Tab Switch & Sync with URL
   const handleTabChange = (tab: TabKey) => {
@@ -54,11 +55,11 @@ export const CommunityPage: React.FC = () => {
   // Load Messages & Connect Realtime WebSocket
   // ----------------------------------------------------
   useEffect(() => {
-    let isMounted = true;
+    isMountedRef.current = true;
 
     // Tải tóm tắt người online và số thành viên VIP thật
     api.community.getOnlineSummary().then((summary) => {
-      if (isMounted && summary) {
+      if (isMountedRef.current && summary) {
         if (summary.onlineCount > 0) setOnlineCount(summary.onlineCount);
         setVipCount(summary.vipCount);
       }
@@ -67,7 +68,7 @@ export const CommunityPage: React.FC = () => {
     const loadMessages = async () => {
       try {
         const data = await api.community.getMessages();
-        if (isMounted) {
+        if (isMountedRef.current) {
           setMessages(data);
         }
       } catch (err) {
@@ -79,7 +80,7 @@ export const CommunityPage: React.FC = () => {
 
     // Kết nối WebSocket thời gian thực
     const disconnectWs = api.community.connectWebSocket((wsMsg: WSCommunityMessage) => {
-      if (!isMounted) return;
+      if (!isMountedRef.current) return;
 
       if (wsMsg.type === 'online_count' && typeof wsMsg.count === 'number') {
         setOnlineCount(wsMsg.count);
@@ -101,7 +102,7 @@ export const CommunityPage: React.FC = () => {
     });
 
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
       disconnectWs();
     };
   }, []);
@@ -117,26 +118,40 @@ export const CommunityPage: React.FC = () => {
   // Load Leaderboards
   // ----------------------------------------------------
   const fetchTopListeners = async () => {
+    if (!isMountedRef.current) return;
     setLoadingTop(true);
     try {
       const data = await api.community.getTopListeners();
-      setTopListeners(data);
+      if (isMountedRef.current) {
+        setTopListeners(data);
+      }
     } catch {
-      toast.error('Không thể cập nhật Bảng xếp hạng giờ nghe');
+      if (isMountedRef.current) {
+        toast.error('Không thể cập nhật Bảng xếp hạng giờ nghe');
+      }
     } finally {
-      setLoadingTop(false);
+      if (isMountedRef.current) {
+        setLoadingTop(false);
+      }
     }
   };
 
   const fetchVipMembers = async () => {
+    if (!isMountedRef.current) return;
     setLoadingVip(true);
     try {
       const data = await api.community.getVipLeaderboard();
-      setVipMembers(data);
+      if (isMountedRef.current) {
+        setVipMembers(data);
+      }
     } catch {
-      toast.error('Không thể cập nhật Bảng vàng VIP');
+      if (isMountedRef.current) {
+        toast.error('Không thể cập nhật Bảng vàng VIP');
+      }
     } finally {
-      setLoadingVip(false);
+      if (isMountedRef.current) {
+        setLoadingVip(false);
+      }
     }
   };
 
