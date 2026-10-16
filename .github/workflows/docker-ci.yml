@@ -181,19 +181,37 @@ jobs:
 
       # Trigger Render Deploy Hook (Tùy chọn nếu người dùng cấu hình RENDER_DEPLOY_HOOK_URL trong Repo Secrets)
       - name: Trigger Render Auto-Deploy Hook (Optional)
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.RENDER_DEPLOY_HOOK_URL != '' }}
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
-          echo "Đang gửi tín hiệu Deploy Hook tới Render..."
-          curl -s -f -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" || echo "Cảnh báo: Không thể gọi Render Deploy Hook."
+          if [ -n "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "Đang gửi tín hiệu Deploy Hook tới Render..."
+            curl -s -f -X POST "$RENDER_DEPLOY_HOOK_URL" || echo "Cảnh báo: Không thể gọi Render Deploy Hook."
+          else
+            echo "Bỏ qua Render Deploy Hook (RENDER_DEPLOY_HOOK_URL chưa được thiết lập trong GitHub Secrets)."
+          fi
 
-      # CI/CD tự động bằng GitHub Actions thông qua giao thức FTP (cổng 21) có sẵn của DirectAdmin
-      - name: Deploy via FTP
+      # CI/CD tự động bằng FTP (Tùy chọn nếu người dùng cấu hình FTP_SERVER trong Repo Secrets)
+      - name: Check FTP Secret
+        id: check_ftp
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+        run: |
+          if [ -n "$FTP_SERVER" ]; then
+            echo "enabled=true" >> $GITHUB_OUTPUT
+          else
+            echo "enabled=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy via FTP (Optional DirectAdmin)
+        if: steps.check_ftp.outputs.enabled == 'true'
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./dist/
+          local-dir: ./frontend/dist/
           server-dir: ./public_html/
           dangerous-clean-slate: false
 

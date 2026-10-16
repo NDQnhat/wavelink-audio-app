@@ -12,7 +12,7 @@ RUN apk add --no-cache git ca-certificates tzdata
 
 # Cache Go modules
 COPY go.mod go.sum ./
-RUN go mod download && go mod verify
+RUN go mod download
 
 # Copy toàn bộ mã nguồn Backend
 COPY . .

@@ -1,0 +1,11 @@
+# Auto detect text files and perform LF normalization on checkout
+* text=auto
+
+# Ensure Go modules, scripts, and Docker files strictly use LF line endings
+*.go text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+Dockerfile* text eol=lf
