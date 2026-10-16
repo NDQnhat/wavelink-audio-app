@@ -2,7 +2,7 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 export const API_BASE = typeof window !== 'undefined' && (window.location.port === '8080' || window.location.origin.includes('8080'))
   ? '/api/v1'
-  : (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1');
+  : (import.meta.env.VITE_API_BASE_URL || (typeof window !== 'undefined' && (window.location.hostname.includes('vercel.app') || window.location.hostname !== 'localhost') ? 'https://wavelink-audio-app.onrender.com/api/v1' : 'http://localhost:8080/api/v1'));
 
 export const axiosClient = axios.create({
   baseURL: API_BASE,

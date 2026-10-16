@@ -58,13 +58,22 @@ type innertubePlayerResponse struct {
 			} `json:"thumbnails"`
 		} `json:"thumbnail"`
 	} `json:"videoDetails"`
+	Microformat struct {
+		PlayerMicroformatRenderer struct {
+			LengthSeconds string `json:"lengthSeconds"`
+			Title         struct {
+				SimpleText string `json:"simpleText"`
+			} `json:"title"`
+			OwnerChannelName string `json:"ownerChannelName"`
+		} `json:"playerMicroformatRenderer"`
+	} `json:"microformat"`
 }
 
 // FetchYouTubeMetadata lấy metadata và thời lượng video chính xác 100% bằng đa chiến lược (Multi-strategy)
 func FetchYouTubeMetadata(videoID string) (*YouTubeMetadata, error) {
 	trimmedID := strings.TrimSpace(videoID)
 	if trimmedID == "" {
-		return defaultMetadata(videoID), fmt.Errorf("video ID rỗng")
+		return nil, fmt.Errorf("video ID rỗng")
 	}
 
 	var title, author, thumb string
@@ -124,10 +133,12 @@ func FetchYouTubeMetadata(videoID string) (*YouTubeMetadata, error) {
 		duration = logic.InferDuration(title, 0)
 	}
 
-	// Hoàn thiện dữ liệu mặc định an toàn
+	// NẾU TẤT CẢ CHIẾN LƯỢC ĐỀU KHÔNG LẤY ĐƯỢC TIÊU ĐỀ THẬT TỪ YOUTUBE:
+	// Video không tồn tại, link bậy bạ hoặc video bị xóa -> BẮT BUỘC BÁO LỖI, KHÔNG TẠO METADATA GIẢ!
 	if title == "" {
-		title = fmt.Sprintf("Audio YouTube - %s", trimmedID)
+		return nil, fmt.Errorf("video YouTube không tồn tại, ở chế độ riêng tư hoặc không thể phát")
 	}
+
 	if author == "" {
 		author = "YouTube Creator"
 	}
@@ -152,7 +163,7 @@ func FetchYouTubeMetadata(videoID string) (*YouTubeMetadata, error) {
 
 // fetchInnertubeProfiles thử lần lượt các client profile của Innertube để vượt qua mọi rào cản IP/bot-check
 func fetchInnertubeProfiles(videoID string) *YouTubeMetadata {
-	client := &http.Client{Timeout: 6 * time.Second}
+	client := &http.Client{Timeout: 5 * time.Second}
 
 	profiles := []struct {
 		clientName    string
@@ -161,20 +172,24 @@ func fetchInnertubeProfiles(videoID string) *YouTubeMetadata {
 		userAgent     string
 	}{
 		{
+			clientName:    "MWEB",
+			clientVersion: "2.20240101.01.00",
+			userAgent:     "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+		},
+		{
+			clientName:    "TVHTML5",
+			clientVersion: "7.20240101.01.00",
+			userAgent:     "Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/5.0 TV Safari/538.1",
+		},
+		{
+			clientName:    "ANDROID_TESTSUITE",
+			clientVersion: "1.9",
+			userAgent:     "Google-HTTP-Java-Client/1.43.3 (gzip)",
+		},
+		{
 			clientName:    "WEB",
 			clientVersion: "2.20240101.01.00",
 			userAgent:     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		},
-		{
-			clientName:    "ANDROID",
-			clientVersion: "19.09.37",
-			androidSDKVer: 30,
-			userAgent:     "com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip",
-		},
-		{
-			clientName:    "IOS",
-			clientVersion: "19.09.1",
-			userAgent:     "com.google.ios.youtube/19.09.1 (iPhone14,3; U; CPU iOS 15_6 like Mac OS X)",
 		},
 	}
 
@@ -215,13 +230,33 @@ func fetchInnertubeProfiles(videoID string) *YouTubeMetadata {
 			continue
 		}
 
+		// Nếu YouTube báo lỗi video không tồn tại
+		if innertubeResp.PlayabilityStatus.Status == "ERROR" {
+			continue
+		}
+
 		lengthSec, _ := strconv.Atoi(innertubeResp.VideoDetails.LengthSeconds)
+		if lengthSec <= 0 {
+			lengthSec, _ = strconv.Atoi(innertubeResp.Microformat.PlayerMicroformatRenderer.LengthSeconds)
+		}
+
 		title := strings.TrimSpace(innertubeResp.VideoDetails.Title)
+		if title == "" {
+			title = strings.TrimSpace(innertubeResp.Microformat.PlayerMicroformatRenderer.Title.SimpleText)
+		}
+
 		author := strings.TrimSpace(innertubeResp.VideoDetails.Author)
+		if author == "" {
+			author = strings.TrimSpace(innertubeResp.Microformat.PlayerMicroformatRenderer.OwnerChannelName)
+		}
+
 		thumb := ""
 		if len(innertubeResp.VideoDetails.Thumbnail.Thumbnails) > 0 {
 			// Lấy thumbnail chất lượng cao nhất ở cuối mảng
 			thumb = innertubeResp.VideoDetails.Thumbnail.Thumbnails[len(innertubeResp.VideoDetails.Thumbnail.Thumbnails)-1].URL
+		}
+		if thumb == "" {
+			thumb = fmt.Sprintf("https://img.youtube.com/vi/%s/hqdefault.jpg", videoID)
 		}
 
 		// Nếu lấy được lengthSec hoặc title hợp lệ

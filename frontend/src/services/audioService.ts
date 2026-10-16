@@ -238,20 +238,24 @@ export const audioService = {
 
     if (isLive) {
       try {
-        const res = await axiosClient.get<{ success: boolean; data: Partial<YouTubePreviewData> }>(
+        const res = await axiosClient.get<{ success: boolean; data: Partial<YouTubePreviewData>; error?: { message?: string } }>(
           `/audios/preview-youtube?url=${encodeURIComponent(url)}`
         );
-        if (res.data.success && res.data.data) {
+        if (res.data.success && res.data.data && res.data.data.title) {
           return {
             videoId: res.data.data.videoId || videoId,
-            title: res.data.data.title || `Audio YouTube - ${videoId}`,
+            title: res.data.data.title,
             author: res.data.data.author || 'YouTube Creator',
             durationSeconds: res.data.data.durationSeconds || 0,
             formattedDuration: res.data.data.formattedDuration || '',
             thumbnailUrl: res.data.data.thumbnailUrl || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
           };
         }
-      } catch (err) {
+      } catch (err: unknown) {
+        const apiErr = err as { status?: number; message?: string };
+        if (apiErr.status === 400 || (apiErr.message && (apiErr.message.includes('không tồn tại') || apiErr.message.includes('không thể phát')))) {
+          throw err;
+        }
         console.warn('previewYouTube live backend failed, fallback to noembed', err);
       }
     }
@@ -260,27 +264,23 @@ export const audioService = {
       const res = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`);
       if (res.ok) {
         const json = await res.json();
-        return {
-          videoId,
-          title: json.title || `Audio YouTube - ${videoId}`,
-          author: json.author_name || 'YouTube Creator',
-          durationSeconds: 0,
-          formattedDuration: '',
-          thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
-        };
+        if (json.title && !json.error) {
+          return {
+            videoId,
+            title: json.title,
+            author: json.author_name || 'YouTube Creator',
+            durationSeconds: 0,
+            formattedDuration: '',
+            thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+          };
+        }
       }
     } catch {
       // Ignore
     }
 
-    return {
-      videoId,
-      title: `Audio YouTube - ${videoId}`,
-      author: 'YouTube Creator',
-      durationSeconds: 0,
-      formattedDuration: '',
-      thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
-    };
+    // Tuyệt đối cấm trả về dummy data cho link không tồn tại hoặc link rác
+    throw new Error('Video YouTube không tồn tại, ở chế độ riêng tư hoặc không thể phát');
   },
 
   async importYouTube(payload: ImportYouTubePayload, isLive = true, currentUserId?: number): Promise<ImportResult> {
@@ -323,6 +323,10 @@ export const audioService = {
           throw new Error(res.data.error?.message || 'Lỗi nhập URL YouTube');
         }
       } catch (err: unknown) {
+        const apiErr = err as { status?: number; message?: string };
+        if (apiErr.status === 400 || (apiErr.message && (apiErr.message.includes('không tồn tại') || apiErr.message.includes('không thể phát')))) {
+          throw err;
+        }
         const msg = (err as Error).message;
         console.warn('importYouTube live API error, fallback to local:', err);
         if (msg && !msg.includes('Network Error') && !msg.includes('timeout')) throw err;
@@ -360,14 +364,27 @@ export const audioService = {
       return { duplicate: true, audio: exists };
     }
 
-    const preview = (await this.previewYouTube(payload.url, isLive)) || {
-      videoId,
-      title: 'Audio mới nhập - ' + videoId,
-      author: 'YouTube Creator',
-      durationSeconds: 0,
-      formattedDuration: '',
-      thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
-    };
+    let preview: YouTubePreviewData | null = null;
+    try {
+      preview = await this.previewYouTube(payload.url, isLive);
+    } catch (err) {
+      if (duration > 0) {
+        preview = {
+          videoId,
+          title: 'Audio mới nhập - ' + videoId,
+          author: 'YouTube Creator',
+          durationSeconds: duration,
+          formattedDuration: formatDuration(duration),
+          thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+        };
+      } else {
+        throw err;
+      }
+    }
+
+    if (!preview) {
+      throw new Error('Video YouTube không tồn tại hoặc không thể phát');
+    }
 
     const finalDuration = duration > 0 ? duration : (preview.durationSeconds > 0 ? preview.durationSeconds : (payload.blockSizeSeconds || 14400));
     const cat = db.categories.find((c) => c.id === payload.categoryId) || { id: 1, name: 'Tiên hiệp', slug: 'tien-hiep' };
@@ -393,8 +410,8 @@ export const audioService = {
       categoryName: cat.name,
       tags: payload.tags.length ? payload.tags : ['Audiobook', 'Tu tiên'],
       thumbnailUrl: preview.thumbnailUrl,
-      totalDurationSeconds: duration,
-      formattedDuration: formatDuration(duration),
+      totalDurationSeconds: finalDuration,
+      formattedDuration: formatDuration(finalDuration),
       totalEpisodes: episodes.length,
       status: 'ACTIVE',
       currentEpisodeNumber: 1,

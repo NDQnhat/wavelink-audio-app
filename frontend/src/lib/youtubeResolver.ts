@@ -38,10 +38,13 @@ export function resolveYouTubeDurationViaIframe(videoId: string): Promise<number
     let isDone = false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let probePlayer: any = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
 
-    const cleanup = () => {
+    const cleanupAndResolve = (result: number) => {
       if (isDone) return;
       isDone = true;
+      if (pollTimer) clearInterval(pollTimer);
+      clearTimeout(timer);
       try {
         if (probePlayer && typeof probePlayer.destroy === 'function') {
           probePlayer.destroy();
@@ -50,13 +53,33 @@ export function resolveYouTubeDurationViaIframe(videoId: string): Promise<number
       try {
         container.remove();
       } catch {}
+      resolve(result);
     };
 
-    // Timeout an toàn 4.5 giây để không làm treo giao diện
+    // Timeout an toàn 4.0 giây
     const timer = setTimeout(() => {
-      cleanup();
-      resolve(0);
-    }, 4500);
+      cleanupAndResolve(0);
+    }, 4000);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tryReadDuration = (player: any) => {
+      try {
+        if (player && typeof player.getDuration === 'function') {
+          const dur = player.getDuration();
+          if (typeof dur === 'number' && dur > 0) {
+            cleanupAndResolve(Math.round(dur));
+            return true;
+          }
+        }
+      } catch {}
+      return false;
+    };
+
+    pollTimer = setInterval(() => {
+      if (probePlayer) {
+        tryReadDuration(probePlayer);
+      }
+    }, 120);
 
     const runProbe = () => {
       try {
@@ -76,22 +99,31 @@ export function resolveYouTubeDurationViaIframe(videoId: string): Promise<number
           events: {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             onReady: (event: any) => {
-              clearTimeout(timer);
-              const durationSec = Math.round(event.target.getDuration() || 0);
-              cleanup();
-              resolve(durationSec);
+              try {
+                event.target.cueVideoById(videoId);
+              } catch {}
+              tryReadDuration(event.target);
             },
-            onError: () => {
-              clearTimeout(timer);
-              cleanup();
-              resolve(0);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            onStateChange: (event: any) => {
+              // 5: CUED, 1: PLAYING, 3: BUFFERING
+              if (event.data === 5 || event.data === 1 || event.data === 3) {
+                tryReadDuration(event.target);
+              }
+            },
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            onError: (event: any) => {
+              // 2: Invalid param, 100: Video not found, 101/150: Cannot be embedded
+              if (event.data === 100 || event.data === 2) {
+                cleanupAndResolve(-1); // Đánh dấu rõ ràng video không tồn tại
+              } else {
+                cleanupAndResolve(0);
+              }
             },
           },
         });
       } catch {
-        clearTimeout(timer);
-        cleanup();
-        resolve(0);
+        cleanupAndResolve(0);
       }
     };
 

@@ -24,6 +24,15 @@ func TestFetchYouTubeMetadata_RealVideo(t *testing.T) {
 	}
 }
 
+func TestFetchYouTubeMetadata_InvalidVideo(t *testing.T) {
+	// Video ID không tồn tại
+	meta, err := external.FetchYouTubeMetadata("11111111111")
+	if err == nil {
+		t.Fatalf("Expected error for non-existent video ID, but got metadata: %+v", meta)
+	}
+	t.Logf("Successfully rejected invalid video: %v", err)
+}
+
 func TestInferDurationFromMetadata(t *testing.T) {
 	meta := &external.YouTubeMetadata{
 		VideoID:         "dQw4w9WgXcQ",

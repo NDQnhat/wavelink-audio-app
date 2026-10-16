@@ -28,6 +28,7 @@ export const UploadPage: React.FC = () => {
 
   const [isChecking, setIsChecking] = useState(false);
   const [previewData, setPreviewData] = useState<YouTubePreviewData | null>(null);
+  const [urlError, setUrlError] = useState<string | null>(null);
 
   const [duplicateModalAudio, setDuplicateModalAudio] = useState<AudioItem | null>(null);
   const [successModalAudio, setSuccessModalAudio] = useState<AudioItem | null>(null);
@@ -45,13 +46,23 @@ export const UploadPage: React.FC = () => {
 
   const checkURL = async (rawUrl: string) => {
     const trimmed = rawUrl.trim();
+    if (!trimmed) {
+      setPreviewData(null);
+      setUrlError(null);
+      return;
+    }
     const videoId = extractYouTubeId(trimmed);
-    if (!videoId) return;
+    if (!videoId) {
+      setUrlError('Liên kết YouTube không đúng định dạng');
+      setPreviewData(null);
+      return;
+    }
 
     setIsChecking(true);
+    setUrlError(null);
     try {
       const data = await api.audio.previewYouTube(trimmed, isLive);
-      if (data) {
+      if (data && data.title) {
         setPreviewData(data);
         if (data.formattedDuration && data.durationSeconds > 0) {
           setDurationInput(data.formattedDuration);
@@ -60,7 +71,12 @@ export const UploadPage: React.FC = () => {
         } else {
           // Fallback probe client-side nếu backend chưa có thời lượng
           const resolvedDur = await resolveYouTubeDurationViaIframe(videoId);
-          if (resolvedDur > 0) {
+          if (resolvedDur === -1) {
+            setUrlError('Video YouTube không tồn tại, ở chế độ riêng tư hoặc không thể phát');
+            setPreviewData(null);
+            setDurationInput('');
+            return;
+          } else if (resolvedDur > 0) {
             setPreviewData({
               ...data,
               durationSeconds: resolvedDur,
@@ -70,18 +86,28 @@ export const UploadPage: React.FC = () => {
           }
         }
       } else {
-        const resolvedDur = await resolveYouTubeDurationViaIframe(videoId);
-        if (resolvedDur > 0) {
-          setDurationInput(formatDuration(resolvedDur));
-        }
+        throw new Error('Video YouTube không tồn tại hoặc bị lỗi phát');
       }
-    } catch {
-      try {
-        const resolvedDur = await resolveYouTubeDurationViaIframe(videoId);
-        if (resolvedDur > 0) {
-          setDurationInput(formatDuration(resolvedDur));
-        }
-      } catch {}
+    } catch (err: unknown) {
+      // Backend hoặc oEmbed từ chối video (link rác)
+      const probeDur = await resolveYouTubeDurationViaIframe(videoId);
+      if (probeDur > 0) {
+        setPreviewData({
+          videoId,
+          title: 'Audio YouTube - ' + videoId,
+          author: 'YouTube Creator',
+          durationSeconds: probeDur,
+          formattedDuration: formatDuration(probeDur),
+          thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+        });
+        setDurationInput(formatDuration(probeDur));
+        setUrlError(null);
+      } else {
+        const msg = (err as Error)?.message || 'Video YouTube không tồn tại hoặc không thể phát!';
+        setUrlError(msg);
+        setPreviewData(null);
+        setDurationInput('');
+      }
     } finally {
       setIsChecking(false);
     }
@@ -89,11 +115,14 @@ export const UploadPage: React.FC = () => {
 
   const handleUrlChange = (val: string) => {
     setUrl(val);
+    setUrlError(null);
     if (checkDebounceRef.current) clearTimeout(checkDebounceRef.current);
     if (val.includes('youtube.com/') || val.includes('youtu.be/')) {
       checkDebounceRef.current = setTimeout(() => {
         checkURL(val);
       }, 400);
+    } else if (!val.trim()) {
+      setPreviewData(null);
     }
   };
 
@@ -141,6 +170,14 @@ export const UploadPage: React.FC = () => {
     }
     if (!url.trim()) {
       toast.error('Vui lòng nhập liên kết YouTube');
+      return;
+    }
+    if (urlError) {
+      toast.error(urlError);
+      return;
+    }
+    if (!previewData) {
+      toast.error('Video YouTube không hợp lệ hoặc không tồn tại! Vui lòng kiểm tra lại liên kết.');
       return;
     }
 
@@ -310,6 +347,17 @@ export const UploadPage: React.FC = () => {
               </button>
             </div>
           </div>
+
+          {/* Error Message Box */}
+          {urlError && (
+            <div className="card-comic-sm p-3 bg-[#FEE2E2] flex items-center gap-2.5 border-2 border-[#EF4444] text-[#B91C1C] fade-in-comic">
+              <i className="ri-error-warning-fill text-lg shrink-0 text-[#DC2626]" />
+              <div className="flex flex-col text-xs font-bold">
+                <span>{urlError}</span>
+                <span className="text-[10px] font-semibold text-gray-600 mt-0.5">Vui lòng kiểm tra lại liên kết YouTube hoặc thử một video hợp lệ khác.</span>
+              </div>
+            </div>
+          )}
 
           {/* Live Preview Box */}
           {previewData && (
@@ -492,9 +540,11 @@ export const UploadPage: React.FC = () => {
         <button
           id="submit-import-btn"
           type="submit"
-          disabled={importMutation.isPending || isQuotaExceeded}
+          disabled={importMutation.isPending || isQuotaExceeded || !previewData || Boolean(urlError)}
           className={`btn-comic ${
-            isQuotaExceeded ? 'bg-gray-300 text-gray-600 border-2 border-gray-500 cursor-not-allowed shadow-none' : 'btn-comic-primary'
+            isQuotaExceeded || !previewData || Boolean(urlError)
+              ? 'bg-gray-300 text-gray-600 border-2 border-gray-500 cursor-not-allowed shadow-none'
+              : 'btn-comic-primary'
           } text-sm py-3 px-4 font-black shadow-comic-md mt-1`}
         >
           {importMutation.isPending ? (
@@ -506,6 +556,11 @@ export const UploadPage: React.FC = () => {
             <>
               <i className="ri-lock-2-line text-lg" />
               <span>Đã Hết Lượt Import Hôm Nay (5/5)</span>
+            </>
+          ) : !previewData || urlError ? (
+            <>
+              <i className="ri-error-warning-line text-lg" />
+              <span>Vui lòng kiểm tra link YouTube hợp lệ</span>
             </>
           ) : (
             <>

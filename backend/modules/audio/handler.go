@@ -446,10 +446,10 @@ func (h *Handler) ImportYouTube(c *gin.Context) {
 		return
 	}
 
-	// 4. Lấy Metadata từ oEmbed (0% quota)
+	// 4. Lấy Metadata từ YouTube (Innertube / oEmbed)
 	meta, err := external.FetchYouTubeMetadata(videoID)
 	if err != nil {
-		response.Internal(c, "Không thể lấy thông tin từ YouTube: "+err.Error())
+		response.BadRequest(c, "Video YouTube không tồn tại, ở chế độ riêng tư hoặc không thể phát")
 		return
 	}
 
@@ -706,7 +706,7 @@ func (h *Handler) PreviewYouTube(c *gin.Context) {
 
 	meta, err := external.FetchYouTubeMetadata(videoID)
 	if err != nil {
-		response.Internal(c, "Lỗi lấy thông tin YouTube: "+err.Error())
+		response.BadRequest(c, "Video YouTube không tồn tại, ở chế độ riêng tư hoặc không thể phát")
 		return
 	}
 

@@ -124,8 +124,8 @@
       "categoryName": "Tiên hiệp",
       "tags": ["Tu tiên", "Audio dài"],
       "thumbnailUrl": "https://lh3.googleusercontent.com/aida-public/AB6AXuCHdF7DUTNicSVIQslxTN5tsd-kDuYrVB-QAu4O-1YKig4YIxKsvyZ8rChJ07FgREo95cJthoeofaawJjknihiKgIt1L5SqwgizpD4coyBbACzMKiaWupecSZfJbeIq8-dFxsXahkfGxNQOzSpynrRhdq0eTFV5pKzQ-xsLdGSchhVPFQotNNIWuh4StJh1CG5PSxnK6Vn04tuJgoBAlXmRwVTJe-6-k7RbuPGT2fvZ_CB3bWPHcFokJA",
-      "totalDurationSeconds": 57600,
-      "formattedDuration": "16h 00m",
+      "totalDurationSeconds": 50946,
+      "formattedDuration": "14h 09m",
       "totalEpisodes": 4,
       "status": "COMPLETED",
       "currentEpisodeNumber": 4,
@@ -138,7 +138,7 @@
         { "id": 401, "episodeNumber": 1, "title": "Tập 1: Ly Khai Ly Châu Động Thiên", "startSeconds": 0, "endSeconds": 14400, "duration": 14400, "completed": true, "progressPercent": 100 },
         { "id": 402, "episodeNumber": 2, "title": "Tập 2: Đại Tuyết Phong Hầu", "startSeconds": 14400, "endSeconds": 28800, "duration": 14400, "completed": true, "progressPercent": 100 },
         { "id": 403, "episodeNumber": 3, "title": "Tập 3: Sông Núi Hữu Tình", "startSeconds": 28800, "endSeconds": 43200, "duration": 14400, "completed": true, "progressPercent": 100 },
-        { "id": 404, "episodeNumber": 4, "title": "Tập 4: Trần Bình An Hạ Sơn", "startSeconds": 43200, "endSeconds": 57600, "duration": 14400, "completed": true, "progressPercent": 95 }
+        { "id": 404, "episodeNumber": 4, "title": "Tập 4: Trần Bình An Hạ Sơn", "startSeconds": 43200, "endSeconds": 50946, "duration": 7746, "completed": true, "progressPercent": 95 }
       ]
     }
   ],
