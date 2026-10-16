@@ -520,7 +520,7 @@ export const SettingsPage: React.FC = () => {
             {[1, 1.25, 1.5, 2].map((s) => (
               <button
                 key={s}
-                onClick={() => setPlaybackRate(s)}
+                onClick={() => setPlaybackRate(s, user?.id)}
                 className={`btn-comic text-xs py-2 font-black ${
                   playbackRate === s ? 'btn-comic-yellow' : 'bg-gray-100'
                 }`}

@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { AudioItem, Episode } from '@/types';
 import { api } from '@/services/api';
+import { rateCoordinator, RateSyncStatus } from '@/lib/playbackRateCoordinator';
+import { playerLogger } from '@/lib/playerLogger';
 
 // Global YouTube Player instance reference
 declare global {
@@ -8,6 +10,10 @@ declare global {
     onYouTubeIframeAPIReady?: () => void;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     YT?: any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    __playerStore?: any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    __measureProgressionRate?: any;
   }
 }
 
@@ -19,22 +25,34 @@ let sleepTimeout: NodeJS.Timeout | null = null;
 let seekDebounceTimer: NodeJS.Timeout | null = null;
 let progressDebounceTimer: NodeJS.Timeout | null = null;
 
-let rateEnforceTimeouts: ReturnType<typeof setTimeout>[] = [];
+let currentPlayerUserId: number | string | null = null;
+let lastSpeedChangeTimestamp = 0;
+let lastSpeedChangeUserId: number | string | null = null;
+
+export function setCurrentPlayerUserId(userId?: number | string | null) {
+  currentPlayerUserId = userId || null;
+}
 
 export function getStoredPlaybackRate(userId?: number | string | null): number {
   if (typeof localStorage === 'undefined') return 1.0;
   try {
-    if (userId) {
-      const userSaved = localStorage.getItem(`comic_audio_user_speed_${userId}`);
-      if (userSaved) {
-        const parsed = parseFloat(userSaved);
-        if (!isNaN(parsed) && parsed > 0) return parsed;
-      }
+    const currentSaved = localStorage.getItem('comic_audio_current_speed');
+    if (currentSaved) {
+      const parsed = parseFloat(currentSaved);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
     }
     const globalSaved = localStorage.getItem('comic_audio_preferred_playback_rate');
     if (globalSaved) {
       const parsed = parseFloat(globalSaved);
       if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    const targetId = userId || currentPlayerUserId;
+    if (targetId) {
+      const userSaved = localStorage.getItem(`comic_audio_user_speed_${targetId}`);
+      if (userSaved) {
+        const parsed = parseFloat(userSaved);
+        if (!isNaN(parsed) && parsed > 0) return parsed;
+      }
     }
   } catch {}
   return 1.0;
@@ -45,36 +63,60 @@ export function persistUserPlaybackRate(rate: number, userId?: number | string |
   try {
     const rateStr = String(rate);
     localStorage.setItem('comic_audio_preferred_playback_rate', rateStr);
-    if (userId) {
-      localStorage.setItem(`comic_audio_user_speed_${userId}`, rateStr);
-    }
     localStorage.setItem('comic_audio_current_speed', rateStr);
+    const targetId = userId || currentPlayerUserId;
+    if (targetId) {
+      localStorage.setItem(`comic_audio_user_speed_${targetId}`, rateStr);
+    }
   } catch {}
 }
 
 export function enforcePlaybackRate(rate: number) {
-  rateEnforceTimeouts.forEach((t) => clearTimeout(t));
-  rateEnforceTimeouts = [];
+  rateCoordinator.setDesiredRate(rate, 'enforcePlaybackRate');
+}
 
-  const targetRate = parseFloat(String(rate)) || 1.0;
+export async function measureProgressionRate(durationMs: number = 3000): Promise<{
+  calculatedRate: number;
+  deltaVideoSec: number;
+  deltaWallSec: number;
+  desiredRate: number;
+  confirmedRate: number;
+}> {
+  const store = usePlayerStore.getState();
+  const player = ytPlayerInstance;
+  if (!player || typeof player.getCurrentTime !== 'function') {
+    throw new Error('Player is not active or getCurrentTime is unavailable');
+  }
 
-  const apply = () => {
-    if (ytPlayerInstance && typeof ytPlayerInstance.setPlaybackRate === 'function') {
-      try {
-        ytPlayerInstance.setPlaybackRate(targetRate);
-      } catch {}
-    }
+  const startTime = performance.now();
+  const startVideoTime = player.getCurrentTime();
+
+  await new Promise((r) => setTimeout(r, durationMs));
+
+  const endTime = performance.now();
+  const endVideoTime = player.getCurrentTime();
+
+  const deltaWallSec = (endTime - startTime) / 1000;
+  const deltaVideoSec = endVideoTime - startVideoTime;
+  const calculatedRate = deltaVideoSec / deltaWallSec;
+
+  const result = {
+    calculatedRate: Math.round(calculatedRate * 100) / 100,
+    deltaVideoSec: Math.round(deltaVideoSec * 1000) / 1000,
+    deltaWallSec: Math.round(deltaWallSec * 1000) / 1000,
+    desiredRate: store.playbackRate,
+    confirmedRate: store.confirmedPlaybackRate,
   };
 
-  // Áp dụng ngay lập tức
-  apply();
-
-  // Retry theo chuỗi thời gian để YouTube IFrame API chắc chắn nhận lệnh khi chuyển đổi trạng thái
-  const delays = [80, 200, 400, 700, 1200, 2000, 3000];
-  delays.forEach((delay) => {
-    const t = setTimeout(apply, delay);
-    rateEnforceTimeouts.push(t);
+  playerLogger.log({
+    instanceId: rateCoordinator.getInstanceId(),
+    action: 'MEASURE_PROGRESSION_RATE',
+    desiredRate: result.desiredRate,
+    confirmedRate: result.confirmedRate,
+    details: result,
   });
+
+  return result;
 }
 
 interface PlayerState {
@@ -83,7 +125,9 @@ interface PlayerState {
   isPlaying: boolean;
   currentTime: number;
   duration: number;
-  playbackRate: number;
+  playbackRate: number; // Desired rate
+  confirmedPlaybackRate: number; // Confirmed rate from YouTube onPlaybackRateChange
+  rateSyncStatus: RateSyncStatus; // 'synced' | 'applying' | 'unsupported'
   isYtReady: boolean;
   sleepTimerMinutes: number | null;
   isSeeking: boolean;
@@ -104,9 +148,12 @@ interface PlayerState {
   close: () => void;
   reset: () => void;
   setYtReady: (ready: boolean) => void;
-  setYtInstance: (instance: unknown) => void;
+  setYtInstance: (instance: unknown, instanceId?: string) => void;
   handleEpisodeComplete: () => void;
 }
+
+const initialStoredRate = getStoredPlaybackRate();
+rateCoordinator.setDesiredRate(initialStoredRate, 'store_module_init');
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentAudio: null,
@@ -114,19 +161,37 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   isPlaying: false,
   currentTime: 0,
   duration: 14400,
-  playbackRate: getStoredPlaybackRate(),
+  playbackRate: initialStoredRate,
+  confirmedPlaybackRate: initialStoredRate,
+  rateSyncStatus: 'synced',
   isYtReady: false,
   sleepTimerMinutes: null,
   isSeeking: false,
 
   setYtReady: (isYtReady: boolean) => set({ isYtReady }),
 
-  setYtInstance: (instance: unknown) => {
+  setYtInstance: (instance: unknown, instanceId: string = 'yt-player-host') => {
     ytPlayerInstance = instance;
     set({ isYtReady: true });
-    // Củng cố lại tốc độ phát hiện tại khi engine vừa sẵn sàng
-    const rate = get().playbackRate || getStoredPlaybackRate() || 1.0;
-    enforcePlaybackRate(rate);
+    rateCoordinator.attachPlayer(instance, instanceId);
+
+    // Xử lý pending playback: nếu user nhấn play trước khi YouTube iframe khởi tạo xong
+    const state = get();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const player = instance as any;
+    if (state.currentAudio && state.isPlaying && player && typeof player.loadVideoById === 'function') {
+      const ep = state.currentEpisode;
+      const startSec = (ep?.startSeconds || 0) + (state.currentTime || 0);
+      try {
+        player.loadVideoById({
+          videoId: state.currentAudio.youtubeVideoId,
+          startSeconds: startSec,
+        });
+        player.playVideo();
+      } catch (err) {
+        console.warn('Error loading pending video on yt ready:', err);
+      }
+    }
   },
 
   play: (audio: AudioItem, episode = null, seekSeconds = null) => {
@@ -151,7 +216,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         targetEpisode = audio.episodes.find((e) => e.episodeNumber === audio.currentEpisodeNumber) || null;
       }
       if (!targetEpisode) {
-        // Tìm tập chưa nghe xong gần nhất hoặc tập 1
         targetEpisode =
           audio.episodes.find((e) => !e.completed && (e.progressPercent || 0) < 95) || audio.episodes[0];
       }
@@ -199,6 +263,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       playbackRate: activeRate,
     });
 
+    rateCoordinator.onVideoLoaded(audio.youtubeVideoId);
+
     if (ytPlayerInstance && typeof ytPlayerInstance.loadVideoById === 'function') {
       try {
         ytPlayerInstance.loadVideoById({
@@ -206,7 +272,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           startSeconds: absoluteStart,
         });
         ytPlayerInstance.playVideo();
-        enforcePlaybackRate(activeRate);
       } catch (err) {
         console.warn('YouTube playVideo call error:', err);
       }
@@ -230,7 +295,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           ytPlayerInstance.pauseVideo();
         } else {
           ytPlayerInstance.playVideo();
-          enforcePlaybackRate(get().playbackRate || 1.0);
+          rateCoordinator.applyRate('togglePlay_resume');
         }
       } catch {
         // Fallback
@@ -266,11 +331,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   resume: () => {
-    const activeRate = get().playbackRate || getStoredPlaybackRate() || 1.0;
     if (ytPlayerInstance) {
       try {
         ytPlayerInstance.playVideo();
-        enforcePlaybackRate(activeRate);
+        rateCoordinator.applyRate('resume_playback');
       } catch {
         // Ignore
       }
@@ -282,7 +346,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   seekTo: (seconds: number) => {
-    const { currentEpisode, duration, playbackRate } = get();
+    const { currentEpisode, duration } = get();
     if (!currentEpisode) return;
 
     const clamped = Math.max(0, Math.min(seconds, duration));
@@ -294,12 +358,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }, 1200);
 
     const absoluteTarget = (currentEpisode.startSeconds || 0) + clamped;
-    const activeRate = playbackRate || 1.0;
 
     if (ytPlayerInstance && typeof ytPlayerInstance.seekTo === 'function') {
       try {
         ytPlayerInstance.seekTo(absoluteTarget, true);
-        enforcePlaybackRate(activeRate);
+        rateCoordinator.applyRate('seekTo_complete');
       } catch (err) {
         console.warn('YouTube seekTo error:', err);
       }
@@ -342,15 +405,59 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   setPlaybackRate: (rate: number, userId?: number | string | null) => {
     const numRate = parseFloat(String(rate)) || 1.0;
-    persistUserPlaybackRate(numRate, userId);
-    set({ playbackRate: numRate });
-    enforcePlaybackRate(numRate);
+    const targetUserId = userId || currentPlayerUserId;
+    if (targetUserId) {
+      currentPlayerUserId = targetUserId;
+    }
+    lastSpeedChangeTimestamp = Date.now();
+    lastSpeedChangeUserId = targetUserId || null;
+
+    persistUserPlaybackRate(numRate, targetUserId);
+    rateCoordinator.setDesiredRate(numRate, 'user_action');
+    set({
+      playbackRate: numRate,
+      confirmedPlaybackRate: rateCoordinator.getConfirmedRate(),
+      rateSyncStatus: rateCoordinator.getSyncStatus(),
+    });
   },
 
   syncUserPlaybackRate: (userId?: number | string | null) => {
-    const stored = getStoredPlaybackRate(userId);
-    set({ playbackRate: stored });
-    enforcePlaybackRate(stored);
+    if (!userId) return;
+    const prevUserId = currentPlayerUserId;
+    currentPlayerUserId = userId;
+
+    const isDifferentUser = prevUserId !== null && prevUserId !== undefined && prevUserId !== userId;
+
+    // 1. Nếu người dùng vừa chủ động chọn tốc độ trong vòng 10 giây qua:
+    const isRecentManualChange = Date.now() - lastSpeedChangeTimestamp < 10000;
+    if (isRecentManualChange && !isDifferentUser) {
+      const activeRate = get().playbackRate || 1.0;
+      persistUserPlaybackRate(activeRate, userId);
+      return;
+    }
+
+    const userKey = `comic_audio_user_speed_${userId}`;
+    const userSaved = typeof localStorage !== 'undefined' ? localStorage.getItem(userKey) : null;
+    if (userSaved) {
+      const parsed = parseFloat(userSaved);
+      if (!isNaN(parsed) && parsed > 0) {
+        // Nếu user này có lưu tốc độ riêng khác 1.0x, HOẶC nếu đây là chuyển đổi rõ ràng giữa 2 user khác nhau:
+        if (parsed !== 1.0 || isDifferentUser) {
+          rateCoordinator.setDesiredRate(parsed, 'user_account_sync');
+          set({
+            playbackRate: parsed,
+            confirmedPlaybackRate: rateCoordinator.getConfirmedRate(),
+            rateSyncStatus: rateCoordinator.getSyncStatus(),
+          });
+          return;
+        }
+      }
+    }
+
+    // Nếu tài khoản này chưa có cấu hình tốc độ riêng (hoặc chỉ là 1.0 mặc định),
+    // thừa kế tốc độ đang hoạt động hiện có thay vì ép hạ về 1.0x
+    const activeRate = get().playbackRate || getStoredPlaybackRate() || 1.0;
+    persistUserPlaybackRate(activeRate, userId);
   },
 
   cycleSpeed: (userId?: number | string | null) => {
@@ -358,7 +465,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const current = get().playbackRate || 1.0;
     const currentIndex = speeds.findIndex((s) => Math.abs(s - current) < 0.05);
     const nextIndex = currentIndex === -1 ? 1 : (currentIndex + 1) % speeds.length;
-    get().setPlaybackRate(speeds[nextIndex], userId);
+    get().setPlaybackRate(speeds[nextIndex], userId || currentPlayerUserId);
   },
 
   setSleepTimer: (minutes: number | null) => {
@@ -411,12 +518,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     stopPolling();
     stopHeartbeat();
     if (sleepTimeout) clearTimeout(sleepTimeout);
+    const storedRate = getStoredPlaybackRate();
+    rateCoordinator.setDesiredRate(storedRate, 'store_reset');
     set({
       currentAudio: null,
       currentEpisode: null,
       isPlaying: false,
       currentTime: 0,
-      playbackRate: getStoredPlaybackRate(),
+      playbackRate: storedRate,
+      confirmedPlaybackRate: storedRate,
+      rateSyncStatus: 'synced',
       sleepTimerMinutes: null,
     });
     updateMediaSession(false, null, null);
@@ -440,24 +551,50 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 }));
 
+// Đăng ký listener từ coordinator vào store để đồng bộ trạng thái confirmedPlaybackRate
+rateCoordinator.subscribe({
+  onDesiredRateChange: (rate) => {
+    usePlayerStore.setState({ playbackRate: rate });
+  },
+  onConfirmedRateChange: (rate, status) => {
+    usePlayerStore.setState({ confirmedPlaybackRate: rate, rateSyncStatus: status });
+  },
+});
+
 function startPolling() {
   stopPolling();
   pollTimer = setInterval(pollIntervalHandler, 1000);
 }
 
+let watchdogDesyncCounter = 0;
+
 function pollIntervalHandler() {
   const store = usePlayerStore.getState();
-  if (!store.isPlaying) return;
+  if (!store.isPlaying) {
+    watchdogDesyncCounter = 0;
+    return;
+  }
 
   if (ytPlayerInstance && typeof ytPlayerInstance.getCurrentTime === 'function') {
-    // Luôn bảo đảm tốc độ thực của YouTube player đồng bộ chính xác với tốc độ đã chọn
+    // Watchdog Guard: Luôn bảo đảm tốc độ thực của YouTube player đồng bộ chính xác với tốc độ đã chọn
     try {
-      if (typeof ytPlayerInstance.getPlaybackRate === 'function') {
+      const ytState = typeof ytPlayerInstance.getPlayerState === 'function' ? ytPlayerInstance.getPlayerState() : null;
+      // Chỉ watchdog khi player thực sự đang ở trạng thái PLAYING (state 1) và coordinator không đang bận retry
+      if (ytState === 1 && !rateCoordinator.isBusyApplying()) {
         const actualRate = ytPlayerInstance.getPlaybackRate();
         const targetRate = store.playbackRate || 1.0;
         if (typeof actualRate === 'number' && Math.abs(actualRate - targetRate) > 0.05) {
-          ytPlayerInstance.setPlaybackRate(targetRate);
+          watchdogDesyncCounter++;
+          // Cần xác nhận lệch liên tục ít nhất 2 lần poll (2 giây) khi đang phát ổn định để tránh bão retry
+          if (watchdogDesyncCounter >= 2) {
+            watchdogDesyncCounter = 0;
+            rateCoordinator.applyRate('watchdog_poll_desync');
+          }
+        } else {
+          watchdogDesyncCounter = 0;
         }
+      } else {
+        watchdogDesyncCounter = 0;
       }
     } catch {}
 
@@ -534,8 +671,6 @@ function saveProgressFor(audio: AudioItem, episode: Episode, currentTime: number
     completed: isCompleted,
   });
 
-  // Tính tổng thời lượng tích luỹ qua các tập:
-  // (thời lượng của các tập trước) + (thời lượng phát của tập hiện tại)
   const prevDuration = episode.startSeconds || 0;
   const accumulatedDuration = prevDuration + currentTime;
 
@@ -554,11 +689,12 @@ function saveCurrentProgress() {
   saveProgressFor(currentAudio, currentEpisode, currentTime, duration);
 }
 
-// Lắng nghe sự kiện trước khi đóng tab để lưu tiến trình đang nghe
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {
     saveCurrentProgress();
   });
+  window.__playerStore = usePlayerStore;
+  window.__measureProgressionRate = measureProgressionRate;
 }
 
 function updateMediaSession(playing: boolean, audio: AudioItem | null, episode: Episode | null) {

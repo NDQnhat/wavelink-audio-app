@@ -1,20 +1,35 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { usePlayerStore } from '@/stores/playerStore';
+import { rateCoordinator } from '@/lib/playbackRateCoordinator';
 import { toast } from '@/components/ui/Toast';
 
 export const YouTubeEngineHost: React.FC = () => {
-  const { setYtInstance, setPlaybackRate, handleEpisodeComplete, togglePlay, skipSeconds, prevEpisode, nextEpisode } =
-    usePlayerStore();
+  const setYtInstance = usePlayerStore((s) => s.setYtInstance);
+  const handleEpisodeComplete = usePlayerStore((s) => s.handleEpisodeComplete);
+  const togglePlay = usePlayerStore((s) => s.togglePlay);
+  const skipSeconds = usePlayerStore((s) => s.skipSeconds);
+  const prevEpisode = usePlayerStore((s) => s.prevEpisode);
+  const nextEpisode = usePlayerStore((s) => s.nextEpisode);
+  const playerRef = useRef<any>(null);
+  const isInitializingRef = useRef<boolean>(false);
+  const instanceIdRef = useRef<string>(`yt-host-${Date.now()}`);
 
   useEffect(() => {
-    // 1. Setup Media Session Handlers
+    const instanceId = instanceIdRef.current;
+
+    // 1. Setup Media Session Handlers safely for Safari/WebKit/Edge
     if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
-      navigator.mediaSession.setActionHandler('play', () => togglePlay());
-      navigator.mediaSession.setActionHandler('pause', () => togglePlay());
-      navigator.mediaSession.setActionHandler('seekbackward', () => skipSeconds(-15));
-      navigator.mediaSession.setActionHandler('seekforward', () => skipSeconds(30));
-      navigator.mediaSession.setActionHandler('previoustrack', () => prevEpisode());
-      navigator.mediaSession.setActionHandler('nexttrack', () => nextEpisode());
+      const safeSetHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler) => {
+        try {
+          navigator.mediaSession.setActionHandler(action, handler);
+        } catch {}
+      };
+      safeSetHandler('play', () => togglePlay());
+      safeSetHandler('pause', () => togglePlay());
+      safeSetHandler('seekbackward', () => skipSeconds(-15));
+      safeSetHandler('seekforward', () => skipSeconds(30));
+      safeSetHandler('previoustrack', () => prevEpisode());
+      safeSetHandler('nexttrack', () => nextEpisode());
     }
 
     // 2. Load YouTube IFrame Script if not already loaded
@@ -28,11 +43,15 @@ export const YouTubeEngineHost: React.FC = () => {
 
     const initYT = () => {
       if (!window.YT || !window.YT.Player) return;
+      if (playerRef.current || isInitializingRef.current) return;
+      isInitializingRef.current = true;
 
       const player = new window.YT.Player('yt-player-target', {
-        height: '100',
-        width: '100',
+        height: '200',
+        width: '200',
+        host: 'https://www.youtube-nocookie.com',
         playerVars: {
+          enablejsapi: 1,
           playsinline: 1,
           controls: 0,
           disablekb: 1,
@@ -42,42 +61,23 @@ export const YouTubeEngineHost: React.FC = () => {
         },
         events: {
           onReady: () => {
-            console.log('🎵 YouTube Audio Engine đã sẵn sàng!');
-            setYtInstance(player);
-            const initialRate = usePlayerStore.getState().playbackRate || 1.0;
-            if (player && typeof player.setPlaybackRate === 'function') {
-              try {
-                player.setPlaybackRate(initialRate);
-              } catch {}
-            }
+            playerRef.current = player;
+            setYtInstance(player, instanceId);
           },
           onStateChange: (event: { data: number }) => {
             const state = event.data;
-            // YT.PlayerState: -1 UNSTARTED, 0 ENDED, 1 PLAYING, 2 PAUSED, 3 BUFFERING, 5 CUED
-            const targetRate = usePlayerStore.getState().playbackRate || 1.0;
+            const stateNames: Record<number, string> = {
+              [-1]: 'UNSTARTED',
+              0: 'ENDED',
+              1: 'PLAYING',
+              2: 'PAUSED',
+              3: 'BUFFERING',
+              5: 'CUED',
+            };
+            const stateName = stateNames[state] || 'UNKNOWN';
 
             if (state === window.YT?.PlayerState?.PLAYING) {
               usePlayerStore.setState({ isPlaying: true, isSeeking: false });
-              // Đảm bảo duy trì tốc độ phát đã chọn khi tiếp tục phát sau khi tua hoặc buffering
-              if (player && typeof player.setPlaybackRate === 'function') {
-                try {
-                  const currentRate =
-                    typeof player.getPlaybackRate === 'function' ? player.getPlaybackRate() : 1;
-                  if (Math.abs(currentRate - targetRate) > 0.05) {
-                    player.setPlaybackRate(targetRate);
-                  }
-                } catch {}
-              }
-            } else if (
-              state === window.YT?.PlayerState?.BUFFERING ||
-              state === window.YT?.PlayerState?.CUED
-            ) {
-              // Củng cố trước tốc độ phát trong lúc tải/buffering
-              if (player && typeof player.setPlaybackRate === 'function') {
-                try {
-                  player.setPlaybackRate(targetRate);
-                } catch {}
-              }
             } else if (
               state === window.YT?.PlayerState?.PAUSED ||
               state === window.YT?.PlayerState?.ENDED
@@ -87,22 +87,12 @@ export const YouTubeEngineHost: React.FC = () => {
                 handleEpisodeComplete();
               }
             }
+
+            rateCoordinator.onStateChange(state, stateName);
           },
           onPlaybackRateChange: (event: { data: number }) => {
             if (event && typeof event.data === 'number' && event.data > 0) {
-              const targetRate = usePlayerStore.getState().playbackRate || 1.0;
-              // Nếu YouTube tự động reset tốc độ (thường về 1.0 khi load video mới)
-              // và khác với tốc độ người dùng mong muốn, ép lại theo ý user
-              if (Math.abs(targetRate - event.data) > 0.05) {
-                console.log(
-                  `[YouTube Engine] Detected rate reset to ${event.data}x, enforcing user target: ${targetRate}x`
-                );
-                if (player && typeof player.setPlaybackRate === 'function') {
-                  try {
-                    player.setPlaybackRate(targetRate);
-                  } catch {}
-                }
-              }
+              rateCoordinator.onRateConfirmedByYouTube(event.data);
             }
           },
           onError: (event: { data: number }) => {
@@ -125,14 +115,41 @@ export const YouTubeEngineHost: React.FC = () => {
 
     if (window.YT && window.YT.Player) {
       initYT();
+    } else {
+      // Polling fallback bảo đảm khởi tạo thành công trên Safari / Edge / Firefox khi script nạp trễ
+      let attempts = 0;
+      const readyInterval = setInterval(() => {
+        attempts++;
+        if (window.YT && window.YT.Player) {
+          clearInterval(readyInterval);
+          initYT();
+        } else if (attempts > 50) {
+          clearInterval(readyInterval);
+        }
+      }, 100);
     }
-  }, [handleEpisodeComplete, nextEpisode, prevEpisode, setPlaybackRate, setYtInstance, skipSeconds, togglePlay]);
+
+    return () => {
+      rateCoordinator.detachPlayer(instanceId);
+      playerRef.current = null;
+      isInitializingRef.current = false;
+    };
+  }, [handleEpisodeComplete, nextEpisode, prevEpisode, setYtInstance, skipSeconds, togglePlay]);
 
   return (
     <div
       id="yt-audio-host-container"
-      className="fixed bottom-0 right-0 w-[200px] h-[200px] pointer-events-none overflow-hidden z-[-999]"
-      style={{ opacity: 0.001 }}
+      style={{
+        position: 'fixed',
+        bottom: '0px',
+        right: '0px',
+        width: '200px',
+        height: '200px',
+        clipPath: 'inset(100%)',
+        opacity: 1,
+        pointerEvents: 'none',
+        zIndex: -1,
+      }}
     >
       <div id="yt-player-target" />
     </div>

@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCategories } from '@/hooks/useCategories';
 import { useImportYouTube } from '@/hooks/useAudio';
@@ -131,8 +131,6 @@ export const UploadPage: React.FC = () => {
       if (result.duplicate) {
         setDuplicateModalAudio(result.audio);
       } else {
-        // Đặt mặc định tốc độ phát là 1.0x khi nhập link mới về
-        usePlayerStore.getState().setPlaybackRate(1.0);
         setSuccessModalAudio(result.audio);
       }
     } catch (err: unknown) {

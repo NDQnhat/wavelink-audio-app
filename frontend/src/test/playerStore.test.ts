@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { usePlayerStore } from '@/stores/playerStore';
+import { rateCoordinator } from '@/lib/playbackRateCoordinator';
 import { AudioItem, Episode } from '@/types';
 
 const mockAudio: AudioItem = {
@@ -186,5 +187,92 @@ describe('Player Store', () => {
     // Khi chuyển lại User B, khôi phục lại 1.5x
     store.syncUserPlaybackRate(2);
     expect(usePlayerStore.getState().playbackRate).toBe(1.5);
+  });
+
+  it('preserves user selected speed when auth finishes asynchronously (race condition fix)', () => {
+    const store = usePlayerStore.getState();
+    // 1. Giả lập người dùng vừa load trang, auth chưa xong (userId = undefined)
+    // Người dùng nhanh tay click chọn tốc độ x2
+    store.setPlaybackRate(2.0, undefined);
+    expect(usePlayerStore.getState().playbackRate).toBe(2.0);
+
+    // 2. Chưa đến 1 giây sau, auth hoàn tất lấy được user (id: 77)
+    // và gọi syncUserPlaybackRate(77)
+    store.syncUserPlaybackRate(77);
+
+    // 3. Khẳng định: Tốc độ x2 PHẢI ĐƯỢC GIỮ NGUYÊN, không bị reset về 1.0x!
+    expect(usePlayerStore.getState().playbackRate).toBe(2.0);
+  });
+
+  it('applies desired rate when player becomes ready later', () => {
+    const store = usePlayerStore.getState();
+    // 1. User chọn x2 khi chưa có player
+    store.setPlaybackRate(2.0);
+    expect(store.playbackRate).toBe(2.0);
+
+    // 2. Player ready sau đó
+    let rateApplied = 1.0;
+    const mockPlayer = {
+      setPlaybackRate: (r: number) => { rateApplied = r; },
+      getAvailablePlaybackRates: () => [0.5, 1, 1.5, 2],
+    };
+    store.setYtInstance(mockPlayer);
+
+    // Rate 2.0x phải được chuyển đến player
+    expect(rateApplied).toBe(2.0);
+  });
+
+  it('re-asserts desired rate when video enters PLAYING state', () => {
+    const store = usePlayerStore.getState();
+    let rateApplied = 1.0;
+    const mockPlayer = {
+      setPlaybackRate: (r: number) => { rateApplied = r; },
+      getAvailablePlaybackRates: () => [0.5, 1, 1.5, 2],
+    };
+    store.setYtInstance(mockPlayer);
+    store.setPlaybackRate(2.0);
+
+    // Khi nạp video mới (YouTube ngầm reset về 1.0x)
+    rateCoordinator.onVideoLoaded('test_vid');
+    expect(usePlayerStore.getState().confirmedPlaybackRate).toBe(1.0);
+
+    // Khi video chuyển sang PLAYING (state 1)
+    rateCoordinator.onStateChange(1, 'PLAYING');
+    expect(rateApplied).toBe(2.0);
+  });
+
+  it('switches back from x2 to x1 cleanly and does not flip back', () => {
+    const store = usePlayerStore.getState();
+    let rateApplied = 1.0;
+    const mockPlayer = {
+      setPlaybackRate: (r: number) => { rateApplied = r; },
+      getAvailablePlaybackRates: () => [0.5, 1, 1.5, 2],
+    };
+    store.setYtInstance(mockPlayer);
+    store.setPlaybackRate(2.0);
+    expect(rateApplied).toBe(2.0);
+
+    // User đổi lại về 1.0x
+    usePlayerStore.getState().setPlaybackRate(1.0);
+    expect(usePlayerStore.getState().playbackRate).toBe(1.0);
+    expect(rateApplied).toBe(1.0);
+
+    rateCoordinator.onRateConfirmedByYouTube(1.0);
+    expect(usePlayerStore.getState().confirmedPlaybackRate).toBe(1.0);
+    expect(usePlayerStore.getState().rateSyncStatus).toBe('synced');
+  });
+
+  it('marks rateSyncStatus as applying when sending rate to YouTube player', () => {
+    const store = usePlayerStore.getState();
+    let rateApplied = 1.0;
+    const mockPlayer = {
+      setPlaybackRate: (r: number) => { rateApplied = r; },
+      getAvailablePlaybackRates: () => [1.0],
+    };
+    store.setYtInstance(mockPlayer);
+    store.setPlaybackRate(2.0);
+
+    expect(rateApplied).toBe(2.0);
+    expect(usePlayerStore.getState().rateSyncStatus).toBe('applying');
   });
 });
