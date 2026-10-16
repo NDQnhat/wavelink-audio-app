@@ -2,14 +2,14 @@
 # WaveLink Backend Dockerfile - Multi-stage Production Build (Golang Alpine)
 # ==============================================================================
 
-# STAGE 1: Build binary statically using official Go Debian image (full glibc compatibility)
-FROM golang:1.24-bookworm AS builder
+# STAGE 1: Build binary statically using official Go 1.26 Debian image (matching go.mod)
+FROM golang:1.26-bookworm AS builder
 
 WORKDIR /build
 
 # Cache Go modules
 COPY go.mod go.sum ./
-RUN go mod download || true
+RUN go mod download
 
 # Copy toàn bộ mã nguồn Backend
 COPY . .
@@ -20,13 +20,13 @@ ARG TARGETARCH=amd64
 
 # Biên dịch tĩnh nhị phân (loại bỏ symbol bảng & thông tin debug để thu nhỏ file còn ~15MB)
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
-    -ldflags="-w -s -extldflags '-static'" \
+    -ldflags="-w -s" \
     -trimpath \
     -o /build/wavelink-api ./cmd/api/main.go
 
 # Biên dịch sẵn CLI Seed phục vụ khởi tạo / reset data trong container
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
-    -ldflags="-w -s -extldflags '-static'" \
+    -ldflags="-w -s" \
     -trimpath \
     -o /build/wavelink-seed ./cmd/seed/main.go
 

@@ -30,7 +30,7 @@ FROM nginx:1.27-alpine AS runner
 
 # Xóa cấu hình mặc định và nạp cấu hình tối ưu SPA + WebSocket Proxy
 RUN rm -rf /etc/nginx/conf.d/default.conf
-COPY nginx.conf /etc/nginx/wavelink.conf
+COPY nginx.conf /etc/nginx/nginx.conf
 
 # Copy static assets sau khi build
 COPY --from=builder /app/dist /usr/share/nginx/html
