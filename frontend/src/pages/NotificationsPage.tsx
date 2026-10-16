@@ -22,7 +22,7 @@ export const NotificationsPage: React.FC = () => {
   const { data: notifications = [], isLoading } = useNotifications();
   const { data: unreadCount = 0 } = useUnreadNotificationCount();
 
-  // Phân trang 12 phần tử/trang từ biến môi trường VITE_NOTIFICATIONS_PER_PAGE hoặc VITE_ITEMS_PER_PAGE
+  // Phân trang 12 phần tử/trang từ biến môi trường VITE_ITEMS_PER_PAGE hoặc VITE_ITEMS_PER_PAGE
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = NOTIFICATION_PAGE_SIZE;
   const totalPages = Math.max(1, Math.ceil(notifications.length / pageSize));
@@ -278,7 +278,7 @@ export const NotificationsPage: React.FC = () => {
               </div>
             ))}
 
-            {/* Phân trang lấy từ env VITE_NOTIFICATIONS_PER_PAGE hoặc fallback 12 */}
+            {/* Phân trang lấy từ env VITE_ITEMS_PER_PAGE hoặc fallback 12 */}
             <Pagination
               currentPage={safeCurrentPage}
               totalPages={totalPages}

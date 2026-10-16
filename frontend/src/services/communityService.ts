@@ -194,11 +194,17 @@ export const communityService = {
 
     const connect = () => {
       try {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        let protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         let host = window.location.host;
 
-        // If running in Vite dev server (e.g. localhost:5173 or 3000), target backend port 8080
-        if (API_BASE.includes('8080') || host.includes('5173') || host.includes('3000')) {
+        // Tự động phân giải host cho WebSocket: hỗ trợ cả Localhost, Docker và Cloud Vercel -> Render
+        if (API_BASE.startsWith('http://') || API_BASE.startsWith('https://')) {
+          try {
+            const parsedApi = new URL(API_BASE);
+            host = parsedApi.host;
+            protocol = parsedApi.protocol === 'https:' ? 'wss:' : 'ws:';
+          } catch {}
+        } else if (API_BASE.includes('8080') || host.includes('5173') || host.includes('3000')) {
           host = window.location.hostname + ':8080';
         }
 

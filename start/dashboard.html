@@ -99,6 +99,9 @@
         <a href="http://localhost:5173" target="_blank" class="btn-comic btn-teal text-xs">
           <i class="ri-external-link-line"></i> Mở Web App (5173)
         </a>
+        <button id="seed-btn" onclick="initSeed()" class="btn-comic btn-teal text-xs" title="Khởi tạo dữ liệu mẫu toàn diện (Admin, Danh mục, Audio demo, v.v.)">
+          <i class="ri-database-2-line"></i> Init Seed
+        </button>
         <button onclick="restartAll()" class="btn-comic btn-yellow text-xs">
           <i class="ri-restart-line"></i> Restart Toàn Bộ
         </button>
@@ -135,6 +138,9 @@
         </button>
         <button onclick="restartBE()" class="btn-comic btn-gray text-xs" title="Khởi động lại Backend">
           <i class="ri-refresh-line"></i>
+        </button>
+        <button onclick="initSeed()" class="btn-comic btn-yellow text-xs" title="Khởi tạo dữ liệu mẫu (Seed Data)">
+          <i class="ri-database-2-line"></i>
         </button>
         <a href="http://localhost:8080/api/v1/audios" target="_blank" class="btn-comic btn-gray text-xs" title="Mở API Audios">
           <i class="ri-links-line"></i>
@@ -394,6 +400,34 @@
         await fetch('/api/all/start', { method: 'POST' });
         fetchStatus();
       }, 1000);
+    }
+
+    async function initSeed() {
+      if (!confirm("Bạn có muốn nạp dữ liệu mẫu toàn diện (Tài khoản ADMIN, Audio mẫu YouTube, Thể loại, Tags, v.v.) vào hệ thống?")) {
+        return;
+      }
+      const seedBtn = document.getElementById('seed-btn');
+      if (seedBtn) {
+        seedBtn.disabled = true;
+        seedBtn.innerHTML = '<i class="ri-loader-4-line animate-spin"></i> Đang nạp seed...';
+      }
+      try {
+        const res = await fetch('/api/seed/init', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          alert("✅ " + (data.message || "Khởi tạo dữ liệu mẫu thành công!"));
+        } else {
+          alert("❌ " + (data.message || "Có lỗi xảy ra khi nạp seed."));
+        }
+      } catch (err) {
+        alert("❌ Lỗi kết nối khi gọi init seed: " + err.message);
+      } finally {
+        if (seedBtn) {
+          seedBtn.disabled = false;
+          seedBtn.innerHTML = '<i class="ri-database-2-line"></i> Init Seed';
+        }
+        fetchLogs();
+      }
     }
 
     async function clearLogs() {

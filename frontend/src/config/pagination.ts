@@ -11,12 +11,12 @@ export const getPageSize = (): number => {
 export const DEFAULT_PAGE_SIZE = getPageSize();
 
 /**
- * Số lượng thông báo trên mỗi trang lấy từ env VITE_NOTIFICATIONS_PER_PAGE,
+ * Số lượng thông báo trên mỗi trang lấy từ env VITE_ITEMS_PER_PAGE,
  * dự phòng VITE_ITEMS_PER_PAGE hoặc mặc định 12.
  */
 export const getNotificationPageSize = (): number => {
   const envVal = Number(
-    import.meta.env.VITE_NOTIFICATIONS_PER_PAGE ||
+    import.meta.env.VITE_ITEMS_PER_PAGE ||
     import.meta.env.VITE_ITEMS_PER_PAGE ||
     import.meta.env.VITE_PAGE_SIZE
   );

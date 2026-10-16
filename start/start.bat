@@ -10,6 +10,7 @@ set "SERVER_PY=%~dp0server.py"
 :: 2. Xu ly tham so
 if /i "%1"=="--stop" goto :DO_STOP
 if /i "%1"=="-s" goto :DO_STOP
+if /i "%1"=="--seed" goto :DO_SEED
 if /i "%1"=="--backend" goto :DO_BACKEND
 if /i "%1"=="-b" goto :DO_BACKEND
 if /i "%1"=="--console" goto :RUN_CONSOLE
@@ -53,6 +54,21 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 go run ./cmd/api/main.go
+exit /b
+
+:DO_SEED
+echo ==========================================================
+echo   WaveLink - Khoi tao Seed Data truc tiep (cmd/seed/main.go)
+echo ==========================================================
+echo.
+cd /d "%BASE_DIR%\backend"
+where.exe go >nul 2>nul
+if %ERRORLEVEL% neq 0 (
+    echo [LOI] Khong tim thay Go tren he thong. Vui long cai dat Golang.
+    pause
+    exit /b 1
+)
+go run ./cmd/seed/main.go
 exit /b
 
 :RUN_CONSOLE

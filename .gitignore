@@ -28,11 +28,17 @@ backend/*.db-journal
 backend/*.db-wal
 backend/*.db-shm
 
-# Environment files
+# Environment files & Secrets (Chặn toàn bộ file môi trường chứa thông tin bảo mật)
 .env
-.env.local
+.env.*
 *.env
-backend/.env
+env.*
+**/.env
+**/.env.*
+**/*.env
+**/env.*
+!*.example
+!**/*.example
 
 # Python caches
 __pycache__/

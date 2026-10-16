@@ -563,6 +563,7 @@ func TestEndToEndAPI(t *testing.T) {
 		user123Token = loginRes.Data.(map[string]interface{})["token"].(string)
 
 		// Verify user123 (free user) cannot access VIP audio with 1 episode (403 Forbidden)
+		db.Where("audio_id = ? AND episode_number > 1", targetAudioID).Delete(&domain.Episode{})
 		vipAccessReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/audios/%.0f", targetAudioID), nil)
 		vipAccessReq.Header.Set("Authorization", "Bearer "+user123Token)
 		vipAccessW := httptest.NewRecorder()

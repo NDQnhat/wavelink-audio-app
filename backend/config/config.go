@@ -16,6 +16,7 @@ const (
 type Config struct {
 	AppEnv              string // "development", "staging", "production"
 	Port                string
+	GinMode             string // "release", "debug", "test"
 	DBDriver            string
 	DBSource            string
 	JWTSecret           string
@@ -26,6 +27,18 @@ type Config struct {
 	VietQRAccountNumber string
 	VietQRAccountName   string
 	VietQRNotePrefix    string
+
+	// Cấu hình tài khoản Admin ban đầu khi khởi tạo dữ liệu
+	AdminUsername string
+	AdminEmail    string
+	AdminPassword string
+	SeedData      bool
+
+	// Connection Pool Optimization (Đặc biệt tối ưu cho Cloud MySQL Aiven/Render/Ubuntu)
+	DBMaxOpenConns           int
+	DBMaxIdleConns           int
+	DBConnMaxLifetimeMinutes int
+	DBConnMaxIdleTimeMinutes int
 }
 
 func (c *Config) IsProduction() bool {
@@ -66,8 +79,18 @@ func Load() *Config {
 
 	appEnv := getEnv("APP_ENV", "development")
 	port := getEnv("PORT", "8080")
+	ginMode := getEnv("GIN_MODE", "")
 	dbDriver := getEnv("DB_DRIVER", "mysql")
-	dbSource := getEnv("DB_SOURCE", DefaultMySQLDSN)
+	dbSource := getEnv("DB_SOURCE", "")
+	if dbSource == "" {
+		if strings.EqualFold(dbDriver, "sqlite") {
+			dbSource = "audio_library.db"
+		} else {
+			dbSource = DefaultMySQLDSN
+		}
+	} else if strings.EqualFold(dbDriver, "sqlite") && dbSource == DefaultMySQLDSN {
+		dbSource = "audio_library.db"
+	}
 	jwtSecret := getEnv("JWT_SECRET", DefaultJWTSecret)
 	staticDir := getEnv("STATIC_DIR", "../frontend")
 	allowedOrigins := getEnv("ALLOWED_ORIGINS", "*")
@@ -85,6 +108,7 @@ func Load() *Config {
 	cfg := &Config{
 		AppEnv:              appEnv,
 		Port:                port,
+		GinMode:             ginMode,
 		DBDriver:            dbDriver,
 		DBSource:            dbSource,
 		JWTSecret:           jwtSecret,
@@ -95,6 +119,18 @@ func Load() *Config {
 		VietQRAccountNumber: getEnv("VIETQR_ACCOUNT_NUMBER", "0987654321"),
 		VietQRAccountName:   getEnv("VIETQR_ACCOUNT_NAME", "COMIC AUDIO HUB"),
 		VietQRNotePrefix:    getEnv("VIETQR_NOTE_PREFIX", "VIP"),
+
+		// Cấu hình tài khoản Admin khi seeding
+		AdminUsername: getEnv("ADMIN_USERNAME", "admin123"),
+		AdminEmail:    getEnv("ADMIN_EMAIL", "admin@audioapp.com"),
+		AdminPassword: getEnv("ADMIN_PASSWORD", "admin123"),
+		SeedData:      getEnvBool("SEED_DATA", true),
+
+		// Thiết lập Connection Pool chuẩn hóa
+		DBMaxOpenConns:           getEnvInt("DB_MAX_OPEN_CONNS", 25),
+		DBMaxIdleConns:           getEnvInt("DB_MAX_IDLE_CONNS", 10),
+		DBConnMaxLifetimeMinutes: getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", 15),
+		DBConnMaxIdleTimeMinutes: getEnvInt("DB_CONN_MAX_IDLE_TIME_MINUTES", 3),
 	}
 
 	// Kiểm tra an toàn: Nếu môi trường là Production, tuyệt đối cấm dùng JWT Secret mặc định
@@ -108,6 +144,24 @@ func Load() *Config {
 func getEnv(key, defaultVal string) string {
 	if val := os.Getenv(key); val != "" {
 		return val
+	}
+	return defaultVal
+}
+
+func getEnvInt(key string, defaultVal int) int {
+	if val := os.Getenv(key); val != "" {
+		if i, err := strconv.Atoi(val); err == nil && i > 0 {
+			return i
+		}
+	}
+	return defaultVal
+}
+
+func getEnvBool(key string, defaultVal bool) bool {
+	if val := os.Getenv(key); val != "" {
+		if b, err := strconv.ParseBool(val); err == nil {
+			return b
+		}
 	}
 	return defaultVal
 }

@@ -1,0 +1,171 @@
+# ==============================================================================
+# WaveLink - Unified Docker Compose (File YML Chính Duy Nhất Cho Mọi Môi Trường)
+# 
+# Quản lý 3 môi trường triển khai chỉ với 1 file này qua cờ --env-file:
+#
+# 1. MÔI TRƯỜNG DEV (Local Development):
+#    docker compose --env-file env.dev up -d
+#
+# 2. MÔI TRƯỜNG VPS UBUNTU CÁ NHÂN (2 Containers: Backend API + MySQL, FE trên Vercel):
+#    docker compose --env-file env.vps up -d
+#    (Mặc định khởi động đúng 2 container backend & db, không tốn RAM cho frontend)
+#
+# 3. MÔI TRƯỜNG FULLSTACK TRÊN VPS (3 Containers: Frontend Nginx + Backend API + MySQL):
+#    docker compose --env-file env.vps --profile fullstack up -d
+#
+# 4. MÔI TRƯỜNG CLOUD (Render / Aiven):
+#    docker compose --env-file env.render up -d backend
+# ==============================================================================
+
+services:
+  # ============================================================================
+  # 1. WAVELINK BACKEND API (Golang Gin + GORM)
+  # Nhẹ, siêu tốc, tiêu thụ chỉ ~25MB - 50MB RAM
+  # ============================================================================
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/tranducanh3103/wavelink-backend:latest}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: wavelink-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    environment:
+      - PORT=8080
+      - APP_ENV=${APP_ENV:-production}
+      - GIN_MODE=${GIN_MODE:-release}
+      - DB_DRIVER=${DB_DRIVER:-mysql}
+      - DB_SOURCE=${DB_SOURCE:-wavelink:${MYSQL_PASSWORD:-wavelinkpass}@tcp(db:3306)/${MYSQL_DATABASE:-audio_app}?charset=utf8mb4&parseTime=True&loc=Local}
+      - JWT_SECRET=${JWT_SECRET:-dev-super-secret-key-change-this-now-wavelink-2026}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+      - EPISODE_BLOCK_SECONDS=${EPISODE_BLOCK_SECONDS:-14400}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin123}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@audioapp.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - SEED_DATA=${SEED_DATA:-true}
+      - DB_MAX_OPEN_CONNS=${DB_MAX_OPEN_CONNS:-25}
+      - DB_MAX_IDLE_CONNS=${DB_MAX_IDLE_CONNS:-10}
+      - DB_CONN_MAX_LIFETIME_MINUTES=${DB_CONN_MAX_LIFETIME_MINUTES:-15}
+      - DB_CONN_MAX_IDLE_TIME_MINUTES=${DB_CONN_MAX_IDLE_TIME_MINUTES:-3}
+      - VIETQR_BANK_NAME=${VIETQR_BANK_NAME:-MB Bank (Quân Đội)}
+      - VIETQR_ACCOUNT_NUMBER=${VIETQR_ACCOUNT_NUMBER:-0987654321}
+      - VIETQR_ACCOUNT_NAME=${VIETQR_ACCOUNT_NAME:-COMIC AUDIO HUB}
+      - VIETQR_NOTE_PREFIX=${VIETQR_NOTE_PREFIX:-VIP}
+    networks:
+      - wavelink-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 200M
+        reservations:
+          memory: 40M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "15m"
+        max-file: "3"
+
+  # ============================================================================
+  # 2. WAVELINK DATABASE (MySQL 8.0 Low-Memory Mode)
+  # Tinh chỉnh tối ưu tiêu thụ RAM từ 550MB xuống dưới ~150MB-180MB
+  # An toàn: Mặc định chỉ bind 127.0.0.1, KHÔNG mở cổng 3306 ra ngoài Internet
+  # ============================================================================
+  db:
+    image: mysql:8.0
+    container_name: wavelink-mysql
+    restart: unless-stopped
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --performance-schema=OFF
+      --innodb-buffer-pool-size=${MYSQL_BUFFER_POOL_SIZE:-64M}
+      --innodb-log-buffer-size=16M
+      --max-connections=${MYSQL_MAX_CONNECTIONS:-35}
+      --skip-name-resolve
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-audio_app}
+      MYSQL_USER: ${MYSQL_USER:-wavelink}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-wavelinkpass}
+    ports:
+      - "${MYSQL_BIND_IP:-127.0.0.1}:${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./deploy/mysql/my-low-memory.cnf:/etc/mysql/conf.d/my-low-memory.cnf:ro
+      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
+    networks:
+      - wavelink-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 400M
+        reservations:
+          memory: 150M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "15m"
+        max-file: "3"
+
+  # ============================================================================
+  # 3. WAVELINK FRONTEND (React Vite + Nginx Reverse Proxy)
+  # Profile: fullstack, frontend, all
+  # (Mặc định không khởi chạy khi deploy VPS 2 container, chỉ chạy khi có flag --profile)
+  # ============================================================================
+  frontend:
+    profiles:
+      - fullstack
+      - frontend
+      - all
+    image: ${FRONTEND_IMAGE:-ghcr.io/tranducanh3103/wavelink-frontend:latest}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+        VITE_ITEMS_PER_PAGE: ${VITE_ITEMS_PER_PAGE:-12}
+    container_name: wavelink-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - wavelink-net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 100M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "15m"
+        max-file: "3"
+
+volumes:
+  mysql_data:
+    name: wavelink_mysql_data
+    driver: local
+
+networks:
+  wavelink-net:
+    name: wavelink-net
+    driver: bridge

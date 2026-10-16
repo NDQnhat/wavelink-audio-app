@@ -28,11 +28,16 @@ func main() {
 	}
 	slog.Info("🚀 Khởi động YouTube Audio Library Backend...", "env", cfg.AppEnv, "port", cfg.Port)
 
-	// 3. Kết nối Cơ sở dữ liệu (Không tự động tạo/seed database khi start để tránh lỗi tạo lặp)
+	// 3. Kết nối Cơ sở dữ liệu và đảm bảo dữ liệu mặc định hệ thống (Admin, Danh mục, Audio demo)
 	db, err := infraDB.InitDatabase(cfg.DBDriver, cfg.DBSource, cfg.IsProduction())
 	if err != nil {
 		slog.Error("Không thể kết nối cơ sở dữ liệu", "error", err)
 		os.Exit(1)
+	}
+
+	// Tự động kiểm tra và dự phòng dữ liệu mẫu mặc định (không tạo trùng lặp khi restart)
+	if err := infraDB.EnsureBaselineSeed(db, cfg.IsProduction()); err != nil {
+		slog.Warn("Tự động kiểm tra seed mặc định gặp cảnh báo", "error", err)
 	}
 
 	// 4. Khởi tạo Router và các Modules

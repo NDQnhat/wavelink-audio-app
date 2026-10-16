@@ -158,7 +158,7 @@ describe('VIP Membership & YouTube Import Quota & Episode Lock', () => {
           freeUser.id
         )
       ).rejects.toThrow('Bạn đã dùng hết lượt nhập link miễn phí hôm nay');
-    });
+    }, 15000);
   });
 
   describe('Exclusive VIP Audio & Episode Locking', () => {

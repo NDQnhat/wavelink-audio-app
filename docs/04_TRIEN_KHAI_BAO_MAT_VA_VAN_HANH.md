@@ -101,3 +101,14 @@ rclone copy "$BACKUP_DIR/db_$TIMESTAMP.sql.gz" remote_r2:audio-backup-bucket/dai
 # 3. Giữ lại bản sao lưu cục bộ tối đa 7 ngày
 find "$BACKUP_DIR" -type f -name "*.sql.gz" -mtime +7 -delete
 ```
+
+---
+
+## 4. Tài Liệu Mở Rộng: Đánh Giá CI/CD, Tối Ưu Hóa Docker & 3 Môi Trường Triển Khai
+
+Xem chi tiết báo cáo kỹ thuật và hướng dẫn cấu hình chuyên sâu tại:
+👉 **[05_DANH_GIA_CI_CD_DOCKER_VA_3_MOI_TRUONG.md](./05_DANH_GIA_CI_CD_DOCKER_VA_3_MOI_TRUONG.md)**
+- Đánh giá kiến trúc GitHub Actions CI/CD và phát hành image lên GitHub Container Registry (`ghcr.io`).
+- Phân tích tối ưu hóa tài nguyên cho VPS nhỏ 1GB RAM (MySQL Low-Memory, Swapfile 2GB).
+- Hướng dẫn cấu hình biến môi trường chi tiết cho 3 môi trường: Dev, Cloud (Vercel/Render/Aiven), và Tự host (Vercel/Ubuntu VPS 2 Containers).
+

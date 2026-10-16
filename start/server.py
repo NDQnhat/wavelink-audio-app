@@ -266,6 +266,47 @@ class ProcessController:
         threading.Thread(target=delayed_exit, daemon=True).start()
         return True
 
+    def run_seed(self):
+        add_log("sys", "🌱 Đang bắt đầu khởi tạo Seed Data toàn diện qua lệnh: go run ./cmd/seed/main.go...")
+        cmd_args = ["go", "run", "./cmd/seed/main.go"]
+
+        startupinfo = None
+        creationflags = 0
+        if sys.platform == 'win32':
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            creationflags = subprocess.CREATE_NO_WINDOW
+
+        try:
+            proc = subprocess.Popen(
+                cmd_args,
+                cwd=BACKEND_DIR,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                bufsize=1,
+                startupinfo=startupinfo,
+                creationflags=creationflags
+            )
+
+            for line in iter(proc.stdout.readline, ''):
+                if line:
+                    add_log("sys", line)
+            proc.stdout.close()
+            proc.wait()
+
+            if proc.returncode == 0:
+                add_log("sys", "✅ Nạp dữ liệu mẫu toàn diện thành công hoàn toàn!")
+                return True, "Nạp dữ liệu mẫu toàn diện thành công!"
+            else:
+                add_log("sys", f"❌ Quá trình seed kết thúc với lỗi (exit code: {proc.returncode})")
+                return False, f"Lỗi seed dữ liệu (mã: {proc.returncode})"
+        except Exception as e:
+            add_log("sys", f"❌ Không thể thực thi lệnh seed: {e}")
+            return False, str(e)
+
     def get_status(self):
         be_online = self.is_be_running()
         fe_online = self.is_fe_running()
@@ -358,6 +399,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             res["success"] = controller.start_all()
         elif path == '/api/all/stop':
             res["success"] = controller.stop_all()
+        elif path == '/api/seed/init':
+            success, msg = controller.run_seed()
+            res["success"] = success
+            res["message"] = msg
         elif path == '/api/shutdown':
             res["success"] = controller.shutdown_everything()
         elif path == '/api/logs/clear':

@@ -1,0 +1,48 @@
+# ==============================================================================
+# MySQL 8.0 Low-Memory Configuration for Small VPS (512MB - 1GB - 2GB RAM)
+# Giảm mức tiêu thụ RAM của MySQL 8 từ ~550MB xuống dưới ~150MB-180MB
+# ==============================================================================
+
+[mysqld]
+# 1. Tắt Performance Schema: Tiết kiệm ngay lập tức 150MB - 250MB RAM
+performance_schema = 0
+
+# 2. Tối ưu bộ đệm InnoDB cho cơ sở dữ liệu vừa và nhỏ
+innodb_buffer_pool_size = 64M
+innodb_log_buffer_size = 16M
+innodb_log_file_size = 32M
+innodb_file_per_table = 1
+innodb_flush_log_at_trx_commit = 2
+innodb_flush_method = O_DIRECT
+
+# 3. Giới hạn số lượng kết nối tương ứng với backend pool
+max_connections = 35
+max_connect_errors = 100
+wait_timeout = 600
+interactive_timeout = 600
+
+# 4. Giảm bộ nhớ cache và buffer tạm thời
+key_buffer_size = 16M
+table_open_cache = 200
+table_definition_cache = 400
+thread_cache_size = 8
+sort_buffer_size = 512K
+read_buffer_size = 256K
+read_rnd_buffer_size = 512K
+join_buffer_size = 512K
+tmp_table_size = 16M
+max_heap_table_size = 16M
+
+# 5. Tắt reverse DNS lookup trong mạng Docker để tăng tốc kết nối
+skip-name-resolve = 1
+
+# 6. Tắt binary log nếu không dùng replication (tiết kiệm I/O và dung lượng đĩa)
+disable-log-bin = 1
+
+# 7. Bộ mã ký tự chuẩn UTF-8 Tiếng Việt đầy đủ
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+default-authentication-plugin = mysql_native_password
+
+[client]
+default-character-set = utf8mb4
