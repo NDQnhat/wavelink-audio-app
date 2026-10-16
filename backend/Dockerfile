@@ -9,7 +9,7 @@ WORKDIR /build
 
 # Cache Go modules
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go mod download || true
 
 # Copy toàn bộ mã nguồn Backend
 COPY . .
