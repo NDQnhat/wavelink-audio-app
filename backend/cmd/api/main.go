@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,11 +16,40 @@ import (
 	"audio-app-backend/server"
 )
 
+// enableCORS bọc router để cấp phép CORS và xử lý Preflight (OPTIONS)
+func enableCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+
+		// Kiểm tra domain hợp lệ (Vercel production, preview deployments và localhost)
+		isAllowed := origin == "https://wavelink-audio-app.vercel.app" ||
+			origin == "http://localhost:5173" ||
+			origin == "http://localhost:3000" ||
+			strings.HasSuffix(origin, ".vercel.app")
+
+		if isAllowed {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
+
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD")
+		w.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Requested-With")
+
+		// Trình duyệt gửi request OPTIONS (Preflight) trước khi gửi Authorization header
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	// 1. Nạp cấu hình trước
 	cfg := config.Load()
 
-	// 2. Khởi tạo Structured Logger (JSON cho Production, Text cho Development)
+	// 2. Khởi tạo Structured Logger
 	opts := &slog.HandlerOptions{Level: slog.LevelInfo}
 	if cfg.IsProduction() {
 		slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, opts)))
@@ -28,14 +58,14 @@ func main() {
 	}
 	slog.Info("🚀 Khởi động YouTube Audio Library Backend...", "env", cfg.AppEnv, "port", cfg.Port)
 
-	// 3. Kết nối Cơ sở dữ liệu và đảm bảo dữ liệu mặc định hệ thống (Admin, Danh mục, Audio demo)
+	// 3. Kết nối Cơ sở dữ liệu
 	db, err := infraDB.InitDatabase(cfg.DBDriver, cfg.DBSource, cfg.IsProduction())
 	if err != nil {
 		slog.Error("Không thể kết nối cơ sở dữ liệu", "error", err)
 		os.Exit(1)
 	}
 
-	// Tự động kiểm tra và dự phòng dữ liệu mẫu mặc định (không tạo trùng lặp khi restart)
+	// Tự động kiểm tra seed mặc định
 	if err := infraDB.EnsureBaselineSeed(db, cfg.IsProduction()); err != nil {
 		slog.Warn("Tự động kiểm tra seed mặc định gặp cảnh báo", "error", err)
 	}
@@ -43,10 +73,10 @@ func main() {
 	// 4. Khởi tạo Router và các Modules
 	router := server.SetupRouter(cfg, db)
 
-	// 5. Khởi động HTTP Server với Graceful Shutdown
+	// 5. Khởi động HTTP Server với Graceful Shutdown (Bọc router qua enableCORS)
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      router,
+		Handler:      enableCORS(router),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 20 * time.Second,
 		IdleTimeout:  60 * time.Second,

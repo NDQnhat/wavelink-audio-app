@@ -29,6 +29,7 @@ backend/*.db-wal
 backend/*.db-shm
 
 # Environment files & Secrets (Chặn toàn bộ file môi trường chứa thông tin bảo mật)
+.wavelink-audio-app-render.env
 .env
 .env.*
 *.env
