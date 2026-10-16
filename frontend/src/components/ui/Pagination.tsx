@@ -8,6 +8,7 @@ export interface PaginationProps {
   pageSize?: number;
   className?: string;
   showItemCount?: boolean;
+  alwaysShow?: boolean;
 }
 
 export const Pagination: React.FC<PaginationProps> = ({
@@ -18,8 +19,9 @@ export const Pagination: React.FC<PaginationProps> = ({
   pageSize,
   className = '',
   showItemCount = true,
+  alwaysShow = false,
 }) => {
-  if (totalPages <= 1 && (!totalItems || totalItems <= (pageSize || 12))) return null;
+  if (!alwaysShow && totalPages <= 1 && (!totalItems || totalItems <= (pageSize || 12))) return null;
 
   // Generate page numbers with ellipsis
   const getPageNumbers = () => {

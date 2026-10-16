@@ -44,18 +44,20 @@ func GenerateToken(user domain.User, secret string) (string, error) {
 func SessionMiddleware(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		tokenString := ""
+		if authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+				tokenString = parts[1]
+			}
+		} else if queryToken := c.Query("token"); queryToken != "" {
+			tokenString = queryToken
+		}
+
+		if tokenString == "" {
 			c.Next()
 			return
 		}
-
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			c.Next()
-			return
-		}
-
-		tokenString := parts[1]
 		claims := &JWTClaims{}
 
 		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
@@ -94,7 +96,14 @@ func RequireAuth() gin.HandlerFunc {
 func RequireAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, exists := c.Get("userRole")
-		if !exists || role != domain.RoleAdmin {
+		roleStr := ""
+		if exists && role != nil {
+			if s, ok := role.(string); ok {
+				roleStr = strings.ToUpper(strings.TrimSpace(s))
+			}
+		}
+
+		if roleStr != domain.RoleAdmin {
 			response.Forbidden(c, "Bạn không có quyền quản trị viên (Admin)")
 			c.Abort()
 			return

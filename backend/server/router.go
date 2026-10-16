@@ -9,6 +9,7 @@ import (
 	"audio-app-backend/config"
 	"audio-app-backend/modules/audio"
 	"audio-app-backend/modules/auth"
+	"audio-app-backend/modules/community"
 	"audio-app-backend/modules/episode"
 	"audio-app-backend/modules/favorite"
 	"audio-app-backend/modules/history"
@@ -118,13 +119,17 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		notificationHandler := notification.NewHandler(db)
 		notificationHandler.RegisterRoutes(v1)
 
-		// 10. Membership Module (VIP QR Demo)
-		membershipHandler := membership.NewHandler(db)
+		// 10. Membership Module (VIP QR Demo & Admin Config)
+		membershipHandler := membership.NewHandler(db, cfg)
 		membershipHandler.RegisterRoutes(v1)
 
 		// 11. Stats Module (Kèm Rate Limiter)
 		statsHandler := stats.NewHandler(db)
 		v1.GET("/stats", statsLimiter.Middleware(), statsHandler.GetStats)
+
+		// 12. Community Module (Realtime Chat & Leaderboards)
+		communityHandler := community.NewHandler(db)
+		communityHandler.RegisterRoutes(v1)
 	}
 
 	// Phục vụ Frontend tĩnh (SPA Fallback)

@@ -2,12 +2,35 @@ import { axiosClient } from '@/lib/axiosClient';
 import { ProgressPayload } from '@/types';
 import { localDb } from './localDb';
 import { formatTime } from '@/lib/utils';
+import { guestSessionService } from './guestSessionService';
 
 const OFFLINE_QUEUE_KEY = 'offline_progress_queue';
 
 export const progressService = {
   async updateProgress(payload: ProgressPayload, isLive = true): Promise<void> {
     const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
+
+    // Nếu chưa đăng nhập / là khách: lưu tạm vào sessionStorage, không gửi lên DB
+    if (!token) {
+      guestSessionService.saveGuestProgress(payload);
+
+      // Cập nhật local memory để đồng bộ hiển thị ngay lập tức
+      const db = localDb.get();
+      const audio = db.audios.find((a) => a.id === payload.audioId);
+      if (audio) {
+        audio.lastPositionSeconds = payload.positionSeconds;
+        audio.progressPercent = Math.min(100, Math.round(payload.progressPercent));
+        audio.formattedPosition = formatTime(payload.positionSeconds);
+        const ep = audio.episodes?.find((e) => e.id === payload.episodeId);
+        if (ep) {
+          ep.progressPercent = Math.min(100, Math.round(payload.progressPercent));
+          if (payload.progressPercent >= 95) ep.completed = true;
+        }
+        localDb.save();
+      }
+      return;
+    }
 
     if (isLive && isOnline) {
       try {

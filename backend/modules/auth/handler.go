@@ -68,30 +68,19 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 func (h *Handler) GuestLogin(c *gin.Context) {
-	guestName := fmt.Sprintf("guest_%s", uuid.New().String()[:8])
-	guestEmail := fmt.Sprintf("%s@guest.local", guestName)
-
+	// Khách vãng lai (GUEST) không còn lưu tài khoản vào cơ sở dữ liệu nữa
+	// để tối ưu dung lượng DB, tránh phình to bảng users không cần thiết.
 	guest := domain.User{
-		Username:   guestName,
-		Email:      guestEmail,
+		ID:         0,
+		Username:   "Khách vãng lai",
+		Email:      "",
 		IsGuest:    true,
 		Role:       domain.RoleGuest,
 		Membership: domain.MembershipFree,
 	}
 
-	if err := h.db.Create(&guest).Error; err != nil {
-		response.Internal(c, "Không thể tạo tài khoản khách: "+err.Error())
-		return
-	}
-
-	token, err := middleware.GenerateToken(guest, h.jwtSecret)
-	if err != nil {
-		response.Internal(c, "Lỗi tạo token xác thực")
-		return
-	}
-
 	response.OK(c, gin.H{
-		"token": token,
+		"token": "",
 		"user":  guest,
 	}, nil)
 }

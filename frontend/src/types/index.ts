@@ -7,3 +7,4 @@ export * from './progress';
 export * from './history';
 export * from './membership';
 export * from './notification';
+export * from './community';

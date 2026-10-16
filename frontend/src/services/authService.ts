@@ -30,12 +30,25 @@ export const authService = {
   },
 
   async guestLogin(): Promise<AuthResponse> {
-    const res = await axiosClient.post<{ success: boolean; data: AuthResponse; error?: { message?: string } }>('/auth/guest');
-    if (res.data.success && res.data.data) {
-      localStorage.setItem('auth_token', res.data.data.token);
-      return res.data.data;
+    // Không lưu token khách vào localStorage, khách hoạt động ở trạng thái chưa đăng nhập
+    localStorage.removeItem('auth_token');
+    try {
+      const res = await axiosClient.post<{ success: boolean; data: AuthResponse; error?: { message?: string } }>('/auth/guest');
+      if (res.data.success && res.data.data) {
+        return res.data.data;
+      }
+    } catch {
+      // Offline fallback
     }
-    throw new Error('Lỗi đăng nhập khách');
+    return {
+      token: '',
+      user: {
+        id: 0,
+        username: 'Khách Nghe Thử',
+        role: 'GUEST',
+        isGuest: true,
+      },
+    };
   },
 
   async googleLogin(payload: import('@/types').GoogleLoginPayload): Promise<AuthResponse> {

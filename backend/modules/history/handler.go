@@ -26,9 +26,14 @@ type RecordHistoryRequest struct {
 	DurationListened int  `json:"durationListened" binding:"required"`
 }
 
+type BatchHistoryRequest struct {
+	Items []RecordHistoryRequest `json:"items" binding:"required"`
+}
+
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/history", middleware.RequireAuth(), h.GetRecentHistory)
 	rg.POST("/history", middleware.RequireAuth(), h.RecordHistory)
+	rg.POST("/history/batch", middleware.RequireAuth(), h.BatchRecordHistory)
 }
 
 func (h *Handler) GetRecentHistory(c *gin.Context) {
@@ -181,4 +186,43 @@ func (h *Handler) RecordHistory(c *gin.Context) {
 	}
 
 	response.Created(c, hist)
+}
+
+func (h *Handler) BatchRecordHistory(c *gin.Context) {
+	userID := middleware.GetCurrentUserID(c)
+	var req BatchHistoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Dữ liệu lịch sử không hợp lệ: "+err.Error())
+		return
+	}
+
+	if len(req.Items) == 0 {
+		response.OK(c, gin.H{"count": 0}, nil)
+		return
+	}
+
+	now := time.Now().UTC()
+	var records []domain.ListeningHistory
+	for _, item := range req.Items {
+		if item.DurationListened < 10 {
+			continue
+		}
+		records = append(records, domain.ListeningHistory{
+			UserID:           userID,
+			AudioID:          item.AudioID,
+			EpisodeID:        item.EpisodeID,
+			DurationListened: item.DurationListened,
+			StartedAt:        now.Add(-time.Duration(item.DurationListened) * time.Second),
+			CreatedAt:        now,
+		})
+	}
+
+	if len(records) > 0 {
+		if err := h.db.Create(&records).Error; err != nil {
+			response.Internal(c, "Lỗi lưu lịch sử hàng loạt: "+err.Error())
+			return
+		}
+	}
+
+	response.OK(c, gin.H{"count": len(records)}, nil)
 }

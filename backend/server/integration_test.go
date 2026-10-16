@@ -10,12 +10,14 @@ import (
 	"testing"
 
 	"audio-app-backend/config"
+	"audio-app-backend/core/domain"
 	infraDB "audio-app-backend/infra/db"
 	"audio-app-backend/server"
 	"audio-app-backend/server/response"
+	"gorm.io/gorm"
 )
 
-func setupTestApp(t *testing.T) http.Handler {
+func setupTestApp(t *testing.T) (http.Handler, *gorm.DB) {
 	testDBPath := "test_audio_library.db"
 	_ = os.Remove(testDBPath)
 
@@ -49,11 +51,11 @@ func setupTestApp(t *testing.T) http.Handler {
 		_ = os.Remove(testDBPath)
 	})
 
-	return server.SetupRouter(cfg, db)
+	return server.SetupRouter(cfg, db), db
 }
 
 func TestEndToEndAPI(t *testing.T) {
-	app := setupTestApp(t)
+	app, db := setupTestApp(t)
 
 	// 1. Healthcheck
 	t.Run("Health check", func(t *testing.T) {
@@ -66,9 +68,8 @@ func TestEndToEndAPI(t *testing.T) {
 		}
 	})
 
-	// 2. Guest Login
-	var guestToken string
-	t.Run("Guest 1-Click Login", func(t *testing.T) {
+	// 2. Guest 1-Click Login (Không lưu vào DB)
+	t.Run("Guest 1-Click Login (No DB Insertion)", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/guest", nil)
 		w := httptest.NewRecorder()
 		app.ServeHTTP(w, req)
@@ -86,13 +87,62 @@ func TestEndToEndAPI(t *testing.T) {
 		}
 
 		dataMap := res.Data.(map[string]interface{})
-		guestToken = dataMap["token"].(string)
-		if guestToken == "" {
-			t.Fatal("Guest token is empty")
+		userMap := dataMap["user"].(map[string]interface{})
+		if userMap["isGuest"] != true {
+			t.Fatalf("Expected isGuest=true, got %v", userMap["isGuest"])
+		}
+
+		// Bảo đảm không có bản ghi khách nào được lưu trong bảng users
+		var guestCount int64
+		db.Model(&domain.User{}).Where("is_guest = 1").Count(&guestCount)
+		if guestCount != 0 {
+			t.Fatalf("Expected 0 guest records in DB, found %d", guestCount)
+		}
+
+		// Khách chưa đăng nhập nên không thể gọi PUT /progress trực tiếp lên DB
+		progPayload := map[string]interface{}{
+			"audioId":         1,
+			"episodeId":       1,
+			"positionSeconds": 100,
+			"progressPercent": 10.0,
+		}
+		progBody, _ := json.Marshal(progPayload)
+		progReq := httptest.NewRequest(http.MethodPut, "/api/v1/progress", bytes.NewReader(progBody))
+		progReq.Header.Set("Content-Type", "application/json")
+		progW := httptest.NewRecorder()
+		app.ServeHTTP(progW, progReq)
+		if progW.Code != http.StatusUnauthorized {
+			t.Fatalf("Expected 401 Unauthorized for guest updating progress without account, got %d", progW.Code)
 		}
 	})
 
-	// 3. Admin Login
+	// 3. User Login (để test các thao tác cần tài khoản như lưu tiến trình, lịch sử vào DB)
+	var userToken string
+	t.Run("User Login", func(t *testing.T) {
+		payload := map[string]string{
+			"username": "user123",
+			"password": "user123",
+		}
+		body, _ := json.Marshal(payload)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("Expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		var res response.Envelope
+		_ = json.Unmarshal(w.Body.Bytes(), &res)
+		dataMap := res.Data.(map[string]interface{})
+		userToken = dataMap["token"].(string)
+		if userToken == "" {
+			t.Fatal("User token is empty")
+		}
+	})
+
+	// 3b. Admin Login
 	var adminToken string
 	t.Run("Admin Login", func(t *testing.T) {
 		payload := map[string]string{
@@ -135,12 +185,12 @@ func TestEndToEndAPI(t *testing.T) {
 		}
 	})
 
-	// 5. List Audios & Verify 4h Episodes
+	// 5. List Audios & Verify 4h Episodes (Truy cập công khai - Không cần token khách)
 	var targetAudioID float64
 	var targetEpisodeID float64
+	var user123Token string
 	t.Run("List Audios & Inspect Seeded Stories", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/audios", nil)
-		req.Header.Set("Authorization", "Bearer "+guestToken)
 		w := httptest.NewRecorder()
 		app.ServeHTTP(w, req)
 
@@ -161,10 +211,9 @@ func TestEndToEndAPI(t *testing.T) {
 		}
 	})
 
-	// 6. Get Audio Detail with Episodes & Resume State
+	// 6. Get Audio Detail with Episodes & Resume State (Truy cập công khai)
 	t.Run("Get Audio Detail with Continuous Episodes", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/audios/%.0f", targetAudioID), nil)
-		req.Header.Set("Authorization", "Bearer "+guestToken)
 		w := httptest.NewRecorder()
 		app.ServeHTTP(w, req)
 
@@ -187,7 +236,7 @@ func TestEndToEndAPI(t *testing.T) {
 		}
 	})
 
-	// 7. Update Progress (Sync 60s & Seek)
+	// 7. Update Progress (Sync 60s & Seek) & Batch Sync (Dành cho tài khoản đã đăng nhập)
 	t.Run("Sync Progress & Verify UPSERT", func(t *testing.T) {
 		payload := map[string]interface{}{
 			"audioId":         targetAudioID,
@@ -199,7 +248,7 @@ func TestEndToEndAPI(t *testing.T) {
 		body, _ := json.Marshal(payload)
 		req := httptest.NewRequest(http.MethodPut, "/api/v1/progress", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+guestToken)
+		req.Header.Set("Authorization", "Bearer "+userToken)
 		w := httptest.NewRecorder()
 		app.ServeHTTP(w, req)
 
@@ -209,7 +258,7 @@ func TestEndToEndAPI(t *testing.T) {
 
 		// Verify that fetching the audio detail now shows resume at 3600 seconds!
 		detailReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/audios/%.0f", targetAudioID), nil)
-		detailReq.Header.Set("Authorization", "Bearer "+guestToken)
+		detailReq.Header.Set("Authorization", "Bearer "+userToken)
 		detailW := httptest.NewRecorder()
 		app.ServeHTTP(detailW, detailReq)
 
@@ -219,12 +268,34 @@ func TestEndToEndAPI(t *testing.T) {
 		if audioData["lastPositionSeconds"].(float64) != 3600 {
 			t.Fatalf("Expected resume position 3600, got %v", audioData["lastPositionSeconds"])
 		}
+
+		// Test Batch Progress Endpoint (di chuyển session của khách khi login)
+		batchPayload := map[string]interface{}{
+			"items": []map[string]interface{}{
+				{
+					"audioId":         targetAudioID,
+					"episodeId":       targetEpisodeID,
+					"positionSeconds": 5400,
+					"progressPercent": 37.5,
+					"completed":       false,
+				},
+			},
+		}
+		batchBody, _ := json.Marshal(batchPayload)
+		batchReq := httptest.NewRequest(http.MethodPut, "/api/v1/progress/batch", bytes.NewReader(batchBody))
+		batchReq.Header.Set("Content-Type", "application/json")
+		batchReq.Header.Set("Authorization", "Bearer "+userToken)
+		batchW := httptest.NewRecorder()
+		app.ServeHTTP(batchW, batchReq)
+		if batchW.Code != http.StatusOK {
+			t.Fatalf("Expected 200 OK for batch progress, got %d: %s", batchW.Code, batchW.Body.String())
+		}
 	})
 
 	// 8. Toggle Favorite
 	t.Run("Toggle Favorite", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/favorites/%.0f", targetAudioID), nil)
-		req.Header.Set("Authorization", "Bearer "+guestToken)
+		req.Header.Set("Authorization", "Bearer "+userToken)
 		w := httptest.NewRecorder()
 		app.ServeHTTP(w, req)
 
@@ -264,15 +335,14 @@ func TestEndToEndAPI(t *testing.T) {
 		}
 		body, _ := json.Marshal(updatePayload)
 
-		// A. Guest cố tình sửa truyện của người khác -> 403 Forbidden
+		// A. Guest không có token cố tình sửa truyện -> 401 Unauthorized
 		guestReq := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/audios/%.0f", targetAudioID), bytes.NewReader(body))
 		guestReq.Header.Set("Content-Type", "application/json")
-		guestReq.Header.Set("Authorization", "Bearer "+guestToken)
 		guestW := httptest.NewRecorder()
 		app.ServeHTTP(guestW, guestReq)
 
-		if guestW.Code != http.StatusForbidden {
-			t.Fatalf("Expected 403 Forbidden for guest updating audio, got %d: %s", guestW.Code, guestW.Body.String())
+		if guestW.Code != http.StatusUnauthorized {
+			t.Fatalf("Expected 401 Unauthorized for unauthenticated updating audio, got %d: %s", guestW.Code, guestW.Body.String())
 		}
 
 		// B. Admin sửa truyện -> 200 OK
@@ -303,9 +373,8 @@ func TestEndToEndAPI(t *testing.T) {
 			t.Fatalf("Failed to mark audio as VIP: %d", setVipW.Code)
 		}
 
-		// A. Khách hoặc thành viên thường cố nghe truyện VIP -> 403 Forbidden
+		// A. Khách (không token) cố nghe truyện VIP -> 403 Forbidden
 		guestReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/audios/%.0f", targetAudioID), nil)
-		guestReq.Header.Set("Authorization", "Bearer "+guestToken)
 		guestW := httptest.NewRecorder()
 		app.ServeHTTP(guestW, guestReq)
 
@@ -366,7 +435,7 @@ func TestEndToEndAPI(t *testing.T) {
 	t.Run("Toggle Favorite (Add then Remove)", func(t *testing.T) {
 		// Toggle ON
 		reqOn := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/favorites/%.0f/toggle", targetAudioID), nil)
-		reqOn.Header.Set("Authorization", "Bearer "+guestToken)
+		reqOn.Header.Set("Authorization", "Bearer "+userToken)
 		wOn := httptest.NewRecorder()
 		app.ServeHTTP(wOn, reqOn)
 
@@ -381,7 +450,7 @@ func TestEndToEndAPI(t *testing.T) {
 
 		// Toggle again -> opposite state
 		reqOff := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/favorites/%.0f/toggle", targetAudioID), nil)
-		reqOff.Header.Set("Authorization", "Bearer "+guestToken)
+		reqOff.Header.Set("Authorization", "Bearer "+userToken)
 		wOff := httptest.NewRecorder()
 		app.ServeHTTP(wOff, reqOff)
 
@@ -398,7 +467,7 @@ func TestEndToEndAPI(t *testing.T) {
 		}
 	})
 
-	// 14. Test Consolidated History (No undefined, no duplicates) (ISSUE 04)
+	// 14. Test Consolidated History (No undefined, no duplicates) (ISSUE 04) & Batch History
 	t.Run("Consolidated History without undefined or duplicates", func(t *testing.T) {
 		// Record history multiple times for the same audio
 		for i := 0; i < 3; i++ {
@@ -410,7 +479,7 @@ func TestEndToEndAPI(t *testing.T) {
 			histBody, _ := json.Marshal(histPayload)
 			histReq := httptest.NewRequest(http.MethodPost, "/api/v1/history", bytes.NewReader(histBody))
 			histReq.Header.Set("Content-Type", "application/json")
-			histReq.Header.Set("Authorization", "Bearer "+guestToken)
+			histReq.Header.Set("Authorization", "Bearer "+userToken)
 			histW := httptest.NewRecorder()
 			app.ServeHTTP(histW, histReq)
 			if histW.Code != http.StatusCreated {
@@ -418,9 +487,29 @@ func TestEndToEndAPI(t *testing.T) {
 			}
 		}
 
+		// Test Batch History Endpoint (di chuyển lịch sử guest khi login)
+		batchHistPayload := map[string]interface{}{
+			"items": []map[string]interface{}{
+				{
+					"audioId":          targetAudioID,
+					"episodeId":        targetEpisodeID,
+					"durationListened": 60,
+				},
+			},
+		}
+		batchHistBody, _ := json.Marshal(batchHistPayload)
+		batchHistReq := httptest.NewRequest(http.MethodPost, "/api/v1/history/batch", bytes.NewReader(batchHistBody))
+		batchHistReq.Header.Set("Content-Type", "application/json")
+		batchHistReq.Header.Set("Authorization", "Bearer "+userToken)
+		batchHistW := httptest.NewRecorder()
+		app.ServeHTTP(batchHistW, batchHistReq)
+		if batchHistW.Code != http.StatusOK {
+			t.Fatalf("Expected 200 OK for batch history, got %d: %s", batchHistW.Code, batchHistW.Body.String())
+		}
+
 		// Query history
 		getHistReq := httptest.NewRequest(http.MethodGet, "/api/v1/history", nil)
-		getHistReq.Header.Set("Authorization", "Bearer "+guestToken)
+		getHistReq.Header.Set("Authorization", "Bearer "+userToken)
 		getHistW := httptest.NewRecorder()
 		app.ServeHTTP(getHistW, getHistReq)
 
@@ -471,15 +560,15 @@ func TestEndToEndAPI(t *testing.T) {
 		}
 		var loginRes response.Envelope
 		_ = json.Unmarshal(loginW.Body.Bytes(), &loginRes)
-		user123Token := loginRes.Data.(map[string]interface{})["token"].(string)
+		user123Token = loginRes.Data.(map[string]interface{})["token"].(string)
 
-		// Verify user123 cannot access VIP audio
+		// Verify user123 (free user) cannot access VIP audio with 1 episode (403 Forbidden)
 		vipAccessReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/audios/%.0f", targetAudioID), nil)
 		vipAccessReq.Header.Set("Authorization", "Bearer "+user123Token)
 		vipAccessW := httptest.NewRecorder()
 		app.ServeHTTP(vipAccessW, vipAccessReq)
 		if vipAccessW.Code != http.StatusForbidden {
-			t.Fatalf("Expected 403 Forbidden for free user accessing VIP audio, got %d", vipAccessW.Code)
+			t.Fatalf("Expected 403 Forbidden for free user accessing 1-episode VIP audio, got %d", vipAccessW.Code)
 		}
 
 		// Create VIP 1 Month Order
@@ -529,47 +618,142 @@ func TestEndToEndAPI(t *testing.T) {
 
 	// 16. Test Data Isolation Between User A and User B (ISSUE 07)
 	t.Run("Data Isolation Between Separate Identities", func(t *testing.T) {
-		// User A (guestToken) has progress and history on targetAudioID
-		// Create a separate Guest B
-		guestBReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/guest", nil)
-		guestBW := httptest.NewRecorder()
-		app.ServeHTTP(guestBW, guestBReq)
-		var guestBRes response.Envelope
-		_ = json.Unmarshal(guestBW.Body.Bytes(), &guestBRes)
-		guestBToken := guestBRes.Data.(map[string]interface{})["token"].(string)
+		// User A (userToken) has progress and history on targetAudioID
+		// Log in as a separate user (regular_user)
+		userBLoginReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader([]byte(`{"username":"regular_user","password":"user123"}`)))
+		userBLoginReq.Header.Set("Content-Type", "application/json")
+		userBW := httptest.NewRecorder()
+		app.ServeHTTP(userBW, userBLoginReq)
+		var userBRes response.Envelope
+		_ = json.Unmarshal(userBW.Body.Bytes(), &userBRes)
+		userBToken := userBRes.Data.(map[string]interface{})["token"].(string)
 
-		// Check Guest B's history -> Must be empty!
+		// Check User B's history -> Must be empty!
 		bHistReq := httptest.NewRequest(http.MethodGet, "/api/v1/history", nil)
-		bHistReq.Header.Set("Authorization", "Bearer "+guestBToken)
+		bHistReq.Header.Set("Authorization", "Bearer "+userBToken)
 		bHistW := httptest.NewRecorder()
 		app.ServeHTTP(bHistW, bHistReq)
 		var bHistRes response.Envelope
 		_ = json.Unmarshal(bHistW.Body.Bytes(), &bHistRes)
 		bItems := bHistRes.Data.([]interface{})
 		if len(bItems) != 0 {
-			t.Fatalf("Data Leak: Guest B saw %d history items from another user!", len(bItems))
+			t.Fatalf("Data Leak: User B saw %d history items from another user!", len(bItems))
 		}
 
-		// Reset targetAudioID to non-VIP so guest B can read details to inspect progress
+		// Reset targetAudioID to non-VIP so User B can read details to inspect progress
 		resetReq := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/audios/%.0f", targetAudioID), bytes.NewReader([]byte(`{"isVipOnly": false}`)))
 		resetReq.Header.Set("Content-Type", "application/json")
 		resetReq.Header.Set("Authorization", "Bearer "+adminToken)
 		resetW := httptest.NewRecorder()
 		app.ServeHTTP(resetW, resetReq)
 
-		// Check Guest B's progress on targetAudioID -> Must be 0
+		// Check User B's progress on targetAudioID -> Must be 0
 		bDetailReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/audios/%.0f", targetAudioID), nil)
-		bDetailReq.Header.Set("Authorization", "Bearer "+guestBToken)
+		bDetailReq.Header.Set("Authorization", "Bearer "+userBToken)
 		bDetailW := httptest.NewRecorder()
 		app.ServeHTTP(bDetailW, bDetailReq)
 		var bDetailRes response.Envelope
 		_ = json.Unmarshal(bDetailW.Body.Bytes(), &bDetailRes)
 		bAudioData, ok := bDetailRes.Data.(map[string]interface{})
 		if !ok || bAudioData == nil {
-			t.Fatalf("Expected audio detail data for guest B, got status %d: %s", bDetailW.Code, bDetailW.Body.String())
+			t.Fatalf("Expected audio detail data for User B, got status %d: %s", bDetailW.Code, bDetailW.Body.String())
 		}
 		if bAudioData["lastPositionSeconds"].(float64) != 0 {
-			t.Fatalf("Data Leak: Guest B saw lastPositionSeconds %v from user A!", bAudioData["lastPositionSeconds"])
+			t.Fatalf("Data Leak: User B saw lastPositionSeconds %v from user A!", bAudioData["lastPositionSeconds"])
+		}
+	})
+
+	// 17. Test Admin VIP Settings & Package Tier Locking
+	t.Run("Admin VIP Management & Package Tier Locking", func(t *testing.T) {
+		// A. Admin updates payment info
+		newPayment := map[string]string{
+			"bankName":      "Vietcombank (Ngoại Thương)",
+			"accountNumber": "1234567899",
+			"accountName":   "TRAN DUC ANH",
+			"notePrefix":    "WAVELINK",
+		}
+		body, _ := json.Marshal(newPayment)
+		updatePayReq := httptest.NewRequest(http.MethodPut, "/api/v1/membership/admin/payment-info", bytes.NewReader(body))
+		updatePayReq.Header.Set("Content-Type", "application/json")
+		updatePayReq.Header.Set("Authorization", "Bearer "+adminToken)
+		updatePayW := httptest.NewRecorder()
+		app.ServeHTTP(updatePayW, updatePayReq)
+		if updatePayW.Code != http.StatusOK {
+			t.Fatalf("Failed to update payment info: %d %s", updatePayW.Code, updatePayW.Body.String())
+		}
+
+		// B. Get payment info publicly
+		getPayReq := httptest.NewRequest(http.MethodGet, "/api/v1/membership/payment-info", nil)
+		getPayW := httptest.NewRecorder()
+		app.ServeHTTP(getPayW, getPayReq)
+		if getPayW.Code != http.StatusOK {
+			t.Fatalf("Failed to get payment info: %d", getPayW.Code)
+		}
+		var payRes response.Envelope
+		_ = json.Unmarshal(getPayW.Body.Bytes(), &payRes)
+		payData := payRes.Data.(map[string]interface{})
+		if payData["bankName"] != "Vietcombank (Ngoại Thương)" || payData["accountNumber"] != "1234567899" {
+			t.Fatalf("Payment info mismatch: %+v", payData)
+		}
+
+		// C. User123 (already upgraded to 1 Month VIP earlier in test) tries to buy 1 Month package again -> 400 Bad Request
+		rebuyReq := httptest.NewRequest(http.MethodPost, "/api/v1/membership/orders", bytes.NewReader([]byte(`{"packageId":"VIP_1M"}`)))
+		rebuyReq.Header.Set("Content-Type", "application/json")
+		rebuyReq.Header.Set("Authorization", "Bearer "+user123Token)
+		rebuyW := httptest.NewRecorder()
+		app.ServeHTTP(rebuyW, rebuyReq)
+		if rebuyW.Code != http.StatusBadRequest {
+			t.Fatalf("Expected 400 Bad Request when rebuying locked lower/same tier package, got %d", rebuyW.Code)
+		}
+
+		// D. User123 upgrades to 3 Months package -> 201 Created & duration accumulates
+		upgradeReq := httptest.NewRequest(http.MethodPost, "/api/v1/membership/orders", bytes.NewReader([]byte(`{"packageId":"VIP_3M"}`)))
+		upgradeReq.Header.Set("Content-Type", "application/json")
+		upgradeReq.Header.Set("Authorization", "Bearer "+user123Token)
+		upgradeW := httptest.NewRecorder()
+		app.ServeHTTP(upgradeW, upgradeReq)
+		if upgradeW.Code != http.StatusCreated {
+			t.Fatalf("Expected 201 Created for upgrading to 3M VIP, got %d: %s", upgradeW.Code, upgradeW.Body.String())
+		}
+		var upRes response.Envelope
+		_ = json.Unmarshal(upgradeW.Body.Bytes(), &upRes)
+		upOrderData := upRes.Data.(map[string]interface{})
+		upOrderCode := upOrderData["orderCode"].(string)
+
+		// Simulate payment SUCCESS for 3M upgrade
+		simBody, _ := json.Marshal(map[string]string{"status": "SUCCESS"})
+		simReq := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/membership/orders/%s/simulate", upOrderCode), bytes.NewReader(simBody))
+		simReq.Header.Set("Content-Type", "application/json")
+		simReq.Header.Set("Authorization", "Bearer "+user123Token)
+		simW := httptest.NewRecorder()
+		app.ServeHTTP(simW, simReq)
+		if simW.Code != http.StatusOK {
+			t.Fatalf("Expected 200 OK on upgrade simulation, got %d", simW.Code)
+		}
+
+		// Verify User123's packages endpoint now marks VIP_1M and VIP_3M as locked, and VIP_1Y as canUpgrade
+		pkgReq := httptest.NewRequest(http.MethodGet, "/api/v1/membership/packages", nil)
+		pkgReq.Header.Set("Authorization", "Bearer "+user123Token)
+		pkgW := httptest.NewRecorder()
+		app.ServeHTTP(pkgW, pkgReq)
+		if pkgW.Code != http.StatusOK {
+			t.Fatalf("Failed to fetch packages for user123: %d", pkgW.Code)
+		}
+		var pkgRes response.Envelope
+		_ = json.Unmarshal(pkgW.Body.Bytes(), &pkgRes)
+		pkgList := pkgRes.Data.([]interface{})
+		for _, item := range pkgList {
+			p := item.(map[string]interface{})
+			if p["id"] == "VIP_1M" || p["id"] == "VIP_3M" {
+				if p["isLocked"] != true {
+					t.Fatalf("Expected %s to be locked for user123, got: %+v", p["id"], p)
+				}
+			}
+			if p["id"] == "VIP_1Y" {
+				if p["canUpgrade"] != true {
+					t.Fatalf("Expected VIP_1Y to be available for upgrade, got: %+v", p)
+				}
+			}
 		}
 	})
 }

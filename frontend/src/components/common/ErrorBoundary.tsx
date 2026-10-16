@@ -47,8 +47,7 @@ export class ErrorBoundary extends Component<Props, State> {
               variant="primary"
               size="sm"
               onClick={() => {
-                window.location.hash = '#/home';
-                window.location.reload();
+                window.location.href = '/home';
               }}
             >
               Về Trang Chủ

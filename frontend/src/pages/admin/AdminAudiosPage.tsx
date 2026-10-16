@@ -145,9 +145,16 @@ export const AdminAudiosPage: React.FC = () => {
                   />
                   <div className="flex flex-col min-w-0 flex-1">
                     <div className="flex items-center justify-between">
-                      <span className="badge-comic badge-comic-blue text-[9px] py-0 px-1 font-bold">
-                        {a.categoryName || 'Chung'}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className="badge-comic badge-comic-blue text-[9px] py-0 px-1 font-bold">
+                          {a.categoryName || 'Chung'}
+                        </span>
+                        {Boolean(a.isVIPOnly || a.isVipOnly) && (
+                          <span className="badge-comic badge-comic-purple text-[8px] py-0 px-1 font-black">
+                            <i className="ri-vip-crown-fill" /> VIP
+                          </span>
+                        )}
+                      </div>
                       <span
                         className={`badge-comic ${
                           a.status === 'ACTIVE' || !a.status ? 'badge-comic-teal' : 'badge-comic-white'

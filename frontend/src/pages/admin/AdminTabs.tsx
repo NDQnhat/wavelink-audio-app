@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 
 export interface AdminTabsProps {
-  activeTab: 'overview' | 'audios' | 'episodes' | 'categories' | 'accounts' | 'settings';
+  activeTab: 'overview' | 'audios' | 'episodes' | 'categories' | 'accounts' | 'vip' | 'community' | 'settings';
 }
 
 export const AdminTabs: React.FC<AdminTabsProps> = ({ activeTab }) => {
@@ -49,6 +49,22 @@ export const AdminTabs: React.FC<AdminTabsProps> = ({ activeTab }) => {
           }`}
         >
           <i className="ri-group-line" /> Tài khoản
+        </NavLink>
+        <NavLink
+          to="/admin/vip"
+          className={`btn-comic text-[11px] py-1 px-2.5 whitespace-nowrap ${
+            activeTab === 'vip' ? 'btn-comic-yellow' : 'bg-white'
+          }`}
+        >
+          <i className="ri-vip-crown-fill text-[#8338EC]" /> Gói VIP & VietQR
+        </NavLink>
+        <NavLink
+          to="/admin/community"
+          className={`btn-comic text-[11px] py-1 px-2.5 whitespace-nowrap ${
+            activeTab === 'community' ? 'btn-comic-yellow' : 'bg-white'
+          }`}
+        >
+          <i className="ri-community-line text-[#3A86FF]" /> Quản Lý Cộng Đồng
         </NavLink>
         <NavLink
           to="/settings"

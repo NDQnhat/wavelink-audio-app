@@ -6,9 +6,13 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(50) NOT NULL UNIQUE,
     email VARCHAR(100) NULL UNIQUE,
     password_hash VARCHAR(255) NULL,
+    avatar_url VARCHAR(500) NULL,
+    cover_url VARCHAR(500) NULL,
+    google_id VARCHAR(100) NULL UNIQUE,
     is_guest BOOLEAN NOT NULL DEFAULT FALSE,
     role VARCHAR(20) DEFAULT 'USER',
     membership VARCHAR(20) DEFAULT 'FREE',
+    vip_expires_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -42,6 +46,8 @@ CREATE TABLE IF NOT EXISTS youtube_videos (
     category_id INT UNSIGNED NULL,
     published_at TIMESTAMP NULL,
     status ENUM('ACTIVE', 'HIDDEN', 'DELETED') DEFAULT 'ACTIVE',
+    is_vip_only BOOLEAN NOT NULL DEFAULT FALSE,
+    created_by INT UNSIGNED NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FULLTEXT INDEX idx_ft_title_author (title, author_name),
@@ -66,6 +72,7 @@ CREATE TABLE IF NOT EXISTS episodes (
     start_seconds INT UNSIGNED NOT NULL DEFAULT 0,
     end_seconds INT UNSIGNED NOT NULL,
     duration_seconds INT UNSIGNED NOT NULL,
+    is_vip BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_audio_episode (audio_id, episode_number),
@@ -108,4 +115,49 @@ CREATE TABLE IF NOT EXISTS favorites (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, audio_id),
     CONSTRAINT fk_fav_audio FOREIGN KEY (audio_id) REFERENCES youtube_videos (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    message TEXT NOT NULL,
+    type VARCHAR(50) DEFAULT 'SYSTEM',
+    link VARCHAR(255) NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_notif (user_id),
+    CONSTRAINT fk_notif_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS notification_preferences (
+    user_id INT UNSIGNED NOT NULL PRIMARY KEY,
+    system_alerts BOOLEAN DEFAULT TRUE,
+    novel_updates BOOLEAN DEFAULT TRUE,
+    promotion_alerts BOOLEAN DEFAULT TRUE,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_np_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS membership_orders (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    order_code VARCHAR(50) NOT NULL UNIQUE,
+    user_id INT UNSIGNED NOT NULL,
+    package_id VARCHAR(30) NOT NULL,
+    package_name VARCHAR(100) NOT NULL,
+    amount INT NOT NULL,
+    duration_days INT NOT NULL,
+    status VARCHAR(30) DEFAULT 'PENDING',
+    qr_code_url VARCHAR(500) NULL,
+    expires_at TIMESTAMP NOT NULL,
+    paid_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_order_user (user_id),
+    INDEX idx_order_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS system_settings (
+    `key` VARCHAR(100) NOT NULL PRIMARY KEY,
+    `value` TEXT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

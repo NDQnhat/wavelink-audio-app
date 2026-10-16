@@ -7,6 +7,7 @@ import { usePlayerStore } from '@/stores/playerStore';
 import { useAuthStore } from '@/stores/authStore';
 import { LoadingState } from '@/components/common/LoadingState';
 import { EmptyState } from '@/components/common/EmptyState';
+import { toast } from '@/components/ui/Toast';
 import { Pagination } from '@/components/ui/Pagination';
 import { DEFAULT_PAGE_SIZE } from '@/config/pagination';
 
@@ -20,6 +21,7 @@ export const LibraryPage: React.FC = () => {
   const urlCategory = searchParams.get('categoryId') ? Number(searchParams.get('categoryId')) : null;
   const urlStatus = searchParams.get('status') || 'all';
   const urlSearch = searchParams.get('search') || '';
+  const urlUserId = searchParams.get('userId') || searchParams.get('createdBy') || '';
 
   const [activeCategory, setActiveCategory] = useState<number | null>(urlCategory);
   const [activeStatus, setActiveStatus] = useState<string>(urlStatus);
@@ -35,10 +37,19 @@ export const LibraryPage: React.FC = () => {
   const { data: categories = [] } = useCategories();
   const { data: tags = [] } = useTags();
 
+  // Kiểm tra xem đang lọc truyện của chính mình hay của người khác
+  const isViewingMyStories = Boolean(
+    activeStatus === 'my' || (urlUserId && user?.id && String(user.id) === String(urlUserId))
+  );
+  const isViewingOtherUserStories = Boolean(
+    urlUserId && (!user?.id || String(user.id) !== String(urlUserId))
+  );
+
   const { data: audios = [], isLoading } = useAudios({
     search: searchQuery,
     categoryId: activeCategory,
-    status: activeStatus === 'all' ? null : activeStatus,
+    status: isViewingMyStories ? 'my' : activeStatus === 'all' ? null : activeStatus,
+    userId: urlUserId || undefined,
   });
 
   // Khử trùng lặp thẻ truyện (Deduplicate) để mỗi audio chỉ xuất hiện đúng 1 thẻ duy nhất
@@ -87,8 +98,21 @@ export const LibraryPage: React.FC = () => {
   const handleStatusSelect = (status: string) => {
     setActiveStatus(status);
     const nextParams = new URLSearchParams(searchParams);
-    if (status && status !== 'all') nextParams.set('status', status);
-    else nextParams.delete('status');
+    if (status === 'my') {
+      if (user?.id) {
+        nextParams.set('userId', String(user.id));
+        nextParams.delete('status');
+      } else {
+        toast.info('Vui lòng đăng nhập để xem truyện của bạn');
+        navigate('/login');
+        return;
+      }
+    } else {
+      nextParams.delete('userId');
+      nextParams.delete('createdBy');
+      if (status && status !== 'all') nextParams.set('status', status);
+      else nextParams.delete('status');
+    }
     setSearchParams(nextParams);
   };
 
@@ -163,12 +187,35 @@ export const LibraryPage: React.FC = () => {
         ))}
       </div>
 
+      {/* Banner hiển thị khi lọc theo ID người dùng cụ thể */}
+      {isViewingOtherUserStories && (
+        <div className="card-comic-sm p-2.5 bg-[#FEF9C3] flex items-center justify-between border-2 border-black shadow-comic-sm">
+          <div className="flex items-center gap-2 min-w-0">
+            <i className="ri-user-shared-fill text-[#3A86FF] text-base shrink-0" />
+            <span className="text-xs font-black text-black truncate">
+              Đang lọc kho truyện của độc giả #{urlUserId}
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              const nextParams = new URLSearchParams(searchParams);
+              nextParams.delete('userId');
+              nextParams.delete('createdBy');
+              setSearchParams(nextParams);
+            }}
+            className="text-xs text-red-600 font-bold hover:underline px-1 shrink-0"
+          >
+            ✕ Xóa bộ lọc
+          </button>
+        </div>
+      )}
+
       {/* 3. Status Filter Chips */}
       <div className="card-comic-sm p-1.5 bg-white flex items-center justify-between gap-1 overflow-x-auto no-scrollbar">
         <button
           onClick={() => handleStatusSelect('all')}
           className={`status-chip flex-1 py-1 px-2 rounded font-extrabold text-[11px] whitespace-nowrap transition-all ${
-            activeStatus === 'all'
+            activeStatus === 'all' && !urlUserId
               ? 'bg-[#FFE600] text-black border border-black shadow-comic-sm'
               : 'text-gray-700 hover:bg-gray-100'
           }`}
@@ -178,12 +225,12 @@ export const LibraryPage: React.FC = () => {
         <button
           onClick={() => handleStatusSelect('my')}
           className={`status-chip flex-1 py-1 px-2 rounded font-extrabold text-[11px] whitespace-nowrap transition-all ${
-            activeStatus === 'my'
+            isViewingMyStories
               ? 'bg-[#FFE600] text-black border border-black shadow-comic-sm'
               : 'text-gray-700 hover:bg-gray-100'
           }`}
         >
-          Của tôi
+          {user?.id ? `Của tôi ` : 'Của tôi'}
         </button>
         <button
           onClick={() => handleStatusSelect('listening')}
@@ -354,6 +401,14 @@ export const LibraryPage: React.FC = () => {
                         if (currentAudio?.id === a.id) {
                           togglePlay();
                         } else {
+                          const isVipOrAdmin = user?.role === 'VIP' || user?.role === 'ADMIN' || user?.membership === 'VIP';
+                          const isVipAudio = Boolean(a.isVIPOnly || a.isVipOnly);
+                          const totalEps = a.totalEpisodes || a.episodes?.length || 1;
+                          if (isVipAudio && !isVipOrAdmin && totalEps <= 1) {
+                            toast.error('Nội dung này độc quyền dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!');
+                            navigate('/membership');
+                            return;
+                          }
                           play(a);
                         }
                       }}

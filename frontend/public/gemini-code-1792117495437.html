@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>WaveLink Comic Icon Generator</title>
+  <style>
+    body {
+      background: #18181b;
+      color: #fff;
+      font-family: system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      gap: 20px;
+    }
+    canvas {
+      width: 320px;
+      height: 320px;
+      border-radius: 72px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+    }
+    .controls {
+      display: flex;
+      gap: 12px;
+    }
+    button {
+      background: #FFE600;
+      color: #000;
+      font-weight: 800;
+      font-size: 15px;
+      padding: 12px 24px;
+      border: 4px solid #000;
+      border-radius: 12px;
+      box-shadow: 4px 4px 0 #000;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    button:active {
+      transform: translate(2px, 2px);
+      box-shadow: 2px 2px 0 #000;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>WaveLink - Comic Icon Generator (1024x1024)</h2>
+  <canvas id="iconCanvas" width="1024" height="1024"></canvas>
+
+  <div class="controls">
+    <button onclick="setTheme('popart')">Màu Pop-Art (Mặc định)</button>
+    <button onclick="setTheme('cyber')">Màu Cyberpunk</button>
+    <button onclick="setTheme('manga')">Màu Manga Đỏ-Đen</button>
+    <button onclick="downloadPNG()" style="background:#00F5D4;">⬇ Tải PNG (1024x1024)</button>
+  </div>
+
+  <script>
+    const themes = {
+      popart: { bg1: '#2B1055', bg2: '#12072B', c1: '#FFE600', c2: '#FF7A00', c3: '#FF006E', link: '#00F5D4' },
+      cyber:  { bg1: '#091E3A', bg2: '#020617', c1: '#00F5D4', c2: '#00BBF9', c3: '#9B5DE5', link: '#FFE600' },
+      manga:  { bg1: '#27272A', bg2: '#09090B', c1: '#FFFFFF', c2: '#FF2A54', c3: '#990022', link: '#FFE600' }
+    };
+
+    function renderIcon(themeKey = 'popart') {
+      const t = themes[themeKey];
+      const svgString = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1024" height="1024">
+        <defs>
+          <clipPath id="iconClip"><rect width="512" height="512" rx="115" /></clipPath>
+          <linearGradient id="comicBg" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="${t.bg1}" />
+            <stop offset="100%" stop-color="${t.bg2}" />
+          </linearGradient>
+          <linearGradient id="wComicGrad" x1="0%" y1="0%" x2="100%" y2="80%">
+            <stop offset="0%" stop-color="${t.c1}" />
+            <stop offset="50%" stop-color="${t.c2}" />
+            <stop offset="100%" stop-color="${t.c3}" />
+          </linearGradient>
+          <pattern id="halftone" width="24" height="24" patternUnits="userSpaceOnUse" patternTransform="rotate(25)">
+            <circle cx="6" cy="6" r="4" fill="${t.c3}" fill-opacity="0.25" />
+            <circle cx="18" cy="18" r="5" fill="${t.link}" fill-opacity="0.15" />
+          </pattern>
+          <path id="wWavePath" d="M 76,195 C 106,195 122,345 168,345 C 214,345 214,165 256,165 C 298,165 298,345 344,345 C 390,345 406,195 436,195" />
+        </defs>
+        <g clip-path="url(#iconClip)">
+          <rect width="512" height="512" fill="url(#comicBg)" />
+          <rect width="512" height="512" fill="url(#halftone)" />
+          <g fill="#000000" fill-opacity="0.3">
+            <polygon points="256,256 -50,80 -50,140" /><polygon points="256,256 120,-50 190,-50" />
+            <polygon points="256,256 360,-50 430,-50" /><polygon points="256,256 560,100 560,170" />
+            <polygon points="256,256 560,340 560,410" /><polygon points="256,256 380,560 310,560" />
+            <polygon points="256,256 180,560 110,560" /><polygon points="256,256 -50,390 -50,320" />
+          </g>
+          <g transform="rotate(-18 256 256)">
+            <rect x="96" y="206" width="340" height="120" rx="60" fill="none" stroke="#000000" stroke-width="26" />
+            <rect x="86" y="196" width="340" height="120" rx="60" fill="none" stroke="#000000" stroke-width="28" />
+            <rect x="86" y="196" width="340" height="120" rx="60" fill="none" stroke="${t.link}" stroke-width="12" stroke-dasharray="180 40" />
+          </g>
+          <use href="#wWavePath" transform="translate(14, 18)" fill="none" stroke="#000000" stroke-width="84" stroke-linecap="round" />
+          <use href="#wWavePath" fill="none" stroke="#000000" stroke-width="84" stroke-linecap="round" />
+          <use href="#wWavePath" fill="none" stroke="url(#wComicGrad)" stroke-width="52" stroke-linecap="round" />
+          <path d="M 76,182 C 95,182 110,260 132,305" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" />
+          <path d="M 235,195 C 245,168 256,158 268,175" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" />
+          <path d="M 398,255 C 410,215 420,185 436,182" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" />
+          <g stroke="#000000" stroke-width="6" stroke-linejoin="round">
+            <polygon points="256,65 242,115 262,110 250,140 278,98 258,102" fill="${t.c1}" />
+            <rect x="195" y="90" width="14" height="36" rx="7" transform="rotate(-20 202 108)" fill="${t.link}" />
+            <rect x="303" y="90" width="14" height="36" rx="7" transform="rotate(20 310 108)" fill="${t.c3}" />
+          </g>
+        </g>
+        <rect x="8" y="8" width="496" height="496" rx="110" fill="none" stroke="#000000" stroke-width="16" />
+      </svg>`;
+
+      const canvas = document.getElementById('iconCanvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+
+      img.onload = function () {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, 1024, 1024);
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    }
+
+    function setTheme(themeKey) {
+      renderIcon(themeKey);
+    }
+
+    function downloadPNG() {
+      const canvas = document.getElementById('iconCanvas');
+      const link = document.createElement('a');
+      link.download = 'wavelink-comic-icon-1024.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+
+    renderIcon('popart');
+  </script>
+</body>
+</html>

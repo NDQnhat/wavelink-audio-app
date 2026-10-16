@@ -22,9 +22,11 @@ frontend/dist/
 *.db
 *.db-journal
 *.db-wal
+*.db-shm
 backend/*.db
 backend/*.db-journal
 backend/*.db-wal
+backend/*.db-shm
 
 # Environment files
 .env

@@ -14,14 +14,18 @@ const (
 )
 
 type Config struct {
-	AppEnv          string // "development", "staging", "production"
-	Port            string
-	DBDriver        string
-	DBSource        string
-	JWTSecret       string
-	StaticDir       string
-	EpisodeBlockSec int
-	AllowedOrigins  string
+	AppEnv              string // "development", "staging", "production"
+	Port                string
+	DBDriver            string
+	DBSource            string
+	JWTSecret           string
+	StaticDir           string
+	EpisodeBlockSec     int
+	AllowedOrigins      string
+	VietQRBankName      string
+	VietQRAccountNumber string
+	VietQRAccountName   string
+	VietQRNotePrefix    string
 }
 
 func (c *Config) IsProduction() bool {
@@ -79,14 +83,18 @@ func Load() *Config {
 	}
 
 	cfg := &Config{
-		AppEnv:          appEnv,
-		Port:            port,
-		DBDriver:        dbDriver,
-		DBSource:        dbSource,
-		JWTSecret:       jwtSecret,
-		StaticDir:       staticDir,
-		EpisodeBlockSec: blockSec,
-		AllowedOrigins:  allowedOrigins,
+		AppEnv:              appEnv,
+		Port:                port,
+		DBDriver:            dbDriver,
+		DBSource:            dbSource,
+		JWTSecret:           jwtSecret,
+		StaticDir:           staticDir,
+		EpisodeBlockSec:     blockSec,
+		AllowedOrigins:      allowedOrigins,
+		VietQRBankName:      getEnv("VIETQR_BANK_NAME", "MB Bank (Quân Đội)"),
+		VietQRAccountNumber: getEnv("VIETQR_ACCOUNT_NUMBER", "0987654321"),
+		VietQRAccountName:   getEnv("VIETQR_ACCOUNT_NAME", "COMIC AUDIO HUB"),
+		VietQRNotePrefix:    getEnv("VIETQR_NOTE_PREFIX", "VIP"),
 	}
 
 	// Kiểm tra an toàn: Nếu môi trường là Production, tuyệt đối cấm dùng JWT Secret mặc định

@@ -14,6 +14,20 @@ export const axiosClient = axios.create({
 
 axiosClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    const authUserStr = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_user') : null;
+    if (authUserStr) {
+      try {
+        const u = JSON.parse(authUserStr);
+        if (u && (u.isGuest || u.role === 'GUEST')) {
+          localStorage.removeItem('auth_token');
+          if (config.headers) {
+            delete config.headers.Authorization;
+          }
+          return config;
+        }
+      } catch {}
+    }
+
     const token = localStorage.getItem('auth_token');
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;

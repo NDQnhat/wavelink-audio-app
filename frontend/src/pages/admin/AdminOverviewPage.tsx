@@ -38,10 +38,10 @@ export const AdminOverviewPage: React.FC = () => {
         <section className="flex flex-col gap-2 pt-1">
           <div className="flex items-center justify-between">
             <span className="badge-comic badge-comic-teal text-[10px]">
-              <i className="ri-checkbox-circle-fill" /> HỆ THỐNG GOLANG PRODUCTION
+              <i className="ri-checkbox-circle-fill" /> HỆ THỐNG wavelink
             </span>
             <span className="badge-comic badge-comic-white text-[10px] font-mono">
-              v3.0.0 PROD
+              v1.0.1
             </span>
           </div>
 
@@ -150,7 +150,33 @@ export const AdminOverviewPage: React.FC = () => {
           </div>
         </section>
 
-        {/* Card 5: Cài đặt hệ thống */}
+        {/* Card 5: Gói VIP & VietQR */}
+        <div
+          onClick={() => navigate('/admin/vip')}
+          className="card-comic p-3.5 bg-white flex items-center justify-between cursor-pointer hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-comic-md transition-all active:translate-x-0.5 active:translate-y-0.5 border-2 border-black"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg border-2 border-black bg-[#FFE600] flex items-center justify-center text-black shadow-comic-sm">
+              <i className="ri-vip-crown-fill text-xl font-bold text-black" />
+            </div>
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <span className="font-extrabold text-xs uppercase text-black">
+                  Cấu Hình Gói VIP & VietQR
+                </span>
+                <span className="badge-comic badge-comic-purple text-[8px] py-0 px-1 font-black">
+                  MỚI
+                </span>
+              </div>
+              <span className="text-[11px] font-semibold text-gray-600">
+                Quản lý bảng giá gói, thông tin tài khoản ngân hàng và chính sách cộng dồn
+              </span>
+            </div>
+          </div>
+          <i className="ri-arrow-right-s-line text-xl font-bold text-black" />
+        </div>
+
+        {/* Card 6: Cài đặt hệ thống */}
         <div
           onClick={() => navigate('/settings')}
           className="card-comic p-3.5 bg-white flex items-center justify-between cursor-pointer hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-comic-md transition-all active:translate-x-0.5 active:translate-y-0.5"

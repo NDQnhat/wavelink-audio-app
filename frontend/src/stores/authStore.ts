@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import { User, LoginPayload, RegisterPayload, GoogleLoginPayload } from '@/types';
 import { api } from '@/services/api';
 import { usePlayerStore } from '@/stores/playerStore';
+import { guestSessionService } from '@/services/guestSessionService';
+import { queryClient } from '@/lib/queryClient';
+import { toast } from '@/components/ui/Toast';
 
 interface AuthState {
   user: User | null;
@@ -16,6 +19,7 @@ interface AuthState {
   guestLogin: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  updateUser: (partial: Partial<User>) => void;
   setLiveStatus: (isLive: boolean) => void;
 }
 
@@ -32,33 +36,47 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const isLive = await api.init();
       set({ isLive });
 
-      if (isLive) {
+      const storedToken = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
+      if (storedToken && isLive) {
         const user = await api.auth.getMe();
         if (user) {
-          set({ user, token: localStorage.getItem('auth_token') });
-          usePlayerStore.getState().syncUserPlaybackRate(user.id);
-        } else {
-          // Auto guest login if no session (ISSUE 06 from vanilla)
-          try {
-            const guestRes = await api.auth.guestLogin();
-            set({ user: guestRes.user, token: guestRes.token });
-            usePlayerStore.getState().syncUserPlaybackRate(guestRes.user.id);
-          } catch {
-            // Unauthenticated
-            usePlayerStore.getState().syncUserPlaybackRate('guest');
+          set({ user, token: storedToken });
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('auth_user', JSON.stringify(user));
           }
+          usePlayerStore.getState().syncUserPlaybackRate(user.id);
+          return;
         }
-      } else {
-        // Fallback guest user
-        const guestUser: User = {
-          id: 999,
-          username: 'Khách Nghe Thử',
-          role: 'GUEST',
-          isGuest: true,
-        };
-        set({ user: guestUser });
-        usePlayerStore.getState().syncUserPlaybackRate(guestUser.id);
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
       }
+
+      // Check offline cached user
+      const cachedUserStr = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_user') : null;
+      if (cachedUserStr) {
+        try {
+          const cachedUser = JSON.parse(cachedUserStr);
+          if (cachedUser && cachedUser.id) {
+            set({ user: cachedUser, token: storedToken });
+            usePlayerStore.getState().syncUserPlaybackRate(cachedUser.id);
+            return;
+          }
+        } catch {}
+      }
+
+      // Khách vãng lai: Chưa đăng nhập, không lưu tài khoản vào DB để tránh phình to dữ liệu
+      const guestUser: User = {
+        id: 0,
+        username: 'Khách Nghe Thử',
+        role: 'GUEST',
+        isGuest: true,
+      };
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('auth_token');
+        localStorage.setItem('auth_user', JSON.stringify(guestUser));
+      }
+      set({ user: guestUser, token: null });
+      usePlayerStore.getState().syncUserPlaybackRate('guest');
     } catch (err) {
       console.warn('Auth init error:', err);
     } finally {
@@ -71,7 +89,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const res = await api.auth.login(payload);
       set({ user: res.user, token: res.token });
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('auth_user', JSON.stringify(res.user));
+      }
       usePlayerStore.getState().syncUserPlaybackRate(res.user.id);
+
+      // Tự động chuyển tiến trình và lịch sử thao tác của khách trong sessionStorage sang tài khoản user trong DB
+      const { progressCount, historyCount } = await guestSessionService.migrateGuestSessionToUser();
+      if (progressCount > 0 || historyCount > 0) {
+        toast.success(`Đã tự động lưu ${progressCount} tiến trình và lịch sử nghe của bạn vào tài khoản!`);
+      }
+      queryClient.invalidateQueries();
     } finally {
       set({ isLoading: false });
     }
@@ -82,7 +110,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const res = await api.auth.register(payload);
       set({ user: res.user, token: res.token });
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('auth_user', JSON.stringify(res.user));
+      }
       usePlayerStore.getState().syncUserPlaybackRate(res.user.id);
+
+      // Tự động chuyển tiến trình và lịch sử thao tác của khách trong sessionStorage sang tài khoản mới trong DB
+      const { progressCount, historyCount } = await guestSessionService.migrateGuestSessionToUser();
+      if (progressCount > 0 || historyCount > 0) {
+        toast.success(`Đã tự động lưu ${progressCount} tiến trình và lịch sử nghe của bạn vào tài khoản mới!`);
+      }
+      queryClient.invalidateQueries();
     } finally {
       set({ isLoading: false });
     }
@@ -94,7 +132,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (get().isLive) {
         const res = await api.auth.googleLogin(payload);
         set({ user: res.user, token: res.token });
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('auth_user', JSON.stringify(res.user));
+        }
         usePlayerStore.getState().syncUserPlaybackRate(res.user.id);
+        const { progressCount, historyCount } = await guestSessionService.migrateGuestSessionToUser();
+        if (progressCount > 0 || historyCount > 0) {
+          toast.success(`Đã tự động lưu ${progressCount} tiến trình và lịch sử nghe của bạn vào tài khoản!`);
+        }
+        queryClient.invalidateQueries();
       } else {
         const candidateName = payload.name || payload.email?.split('@')[0] || 'Google User';
         const googleUser: User = {
@@ -109,8 +155,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         };
         const mockToken = 'mock_google_jwt_' + Date.now();
         localStorage.setItem('auth_token', mockToken);
+        localStorage.setItem('auth_user', JSON.stringify(googleUser));
         set({ user: googleUser, token: mockToken });
         usePlayerStore.getState().syncUserPlaybackRate(googleUser.id);
+        const { progressCount, historyCount } = await guestSessionService.migrateGuestSessionToUser();
+        if (progressCount > 0 || historyCount > 0) {
+          toast.success(`Đã tự động lưu ${progressCount} tiến trình và lịch sử nghe của bạn vào tài khoản!`);
+        }
+        queryClient.invalidateQueries();
       }
     } finally {
       set({ isLoading: false });
@@ -120,15 +172,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   guestLogin: async () => {
     set({ isLoading: true });
     try {
-      if (get().isLive) {
-        const res = await api.auth.guestLogin();
-        set({ user: res.user, token: res.token });
-        usePlayerStore.getState().syncUserPlaybackRate(res.user.id);
-      } else {
-        const guestUser: User = { id: 999, username: 'Khách Nghe Thử', role: 'GUEST', isGuest: true };
-        set({ user: guestUser });
-        usePlayerStore.getState().syncUserPlaybackRate(guestUser.id);
-      }
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+      const guestUser: User = { id: 0, username: 'Khách Nghe Thử', role: 'GUEST', isGuest: true };
+      set({ user: guestUser, token: null });
+      usePlayerStore.getState().syncUserPlaybackRate('guest');
+      queryClient.invalidateQueries();
     } finally {
       set({ isLoading: false });
     }
@@ -136,10 +185,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     await api.auth.logout();
-    set({ user: null, token: null });
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+    guestSessionService.clearGuestSession();
+    const guestUser: User = { id: 0, username: 'Khách Nghe Thử', role: 'GUEST', isGuest: true };
+    set({ user: guestUser, token: null });
     usePlayerStore.getState().syncUserPlaybackRate('guest');
-    // Auto restore guest
-    get().guestLogin().catch(() => {});
+    queryClient.invalidateQueries();
   },
 
   refreshUser: async () => {
@@ -147,9 +199,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const user = await api.auth.getMe();
       if (user) {
         set({ user });
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('auth_user', JSON.stringify(user));
+        }
         usePlayerStore.getState().syncUserPlaybackRate(user.id);
       }
+    } else {
+      const cached = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_user') : null;
+      if (cached) {
+        try {
+          const user = JSON.parse(cached);
+          if (user) {
+            set({ user });
+            usePlayerStore.getState().syncUserPlaybackRate(user.id);
+          }
+        } catch {}
+      }
     }
+  },
+
+  updateUser: (partial: Partial<User>) => {
+    const current = get().user;
+    if (!current) return;
+    const updated = { ...current, ...partial };
+    set({ user: updated });
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('auth_user', JSON.stringify(updated));
+    }
+    usePlayerStore.getState().syncUserPlaybackRate(updated.id);
   },
 
   setLiveStatus: (isLive: boolean) => set({ isLive }),

@@ -9,6 +9,12 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { toast } from '@/components/ui/Toast';
 import { api } from '@/services/api';
+import {
+  useNotificationPreferences,
+  useUpdateNotificationPreferences,
+  useUnreadNotificationCount,
+} from '@/hooks/useNotifications';
+import { externalNotificationService } from '@/services/externalNotificationService';
 
 const GOOGLE_CLIENT_ID = '1843465297-bbnnggqpe1s5r82gtvi2h0kli7fves7c.apps.googleusercontent.com';
 
@@ -75,6 +81,94 @@ export const SettingsPage: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
 
   const isVip = myMembership?.isVip || user?.role === 'VIP' || user?.role === 'ADMIN';
+
+  // Notification preferences and background external alerts
+  const { data: notifPrefs } = useNotificationPreferences();
+  const updateNotifPrefsMutation = useUpdateNotificationPreferences();
+  const { data: unreadNotifCount = 0 } = useUnreadNotificationCount();
+
+  const [prefBlockAll, setPrefBlockAll] = useState(false);
+  const [prefExternalAudio, setPrefExternalAudio] = useState(true);
+  const [prefEpisodes, setPrefEpisodes] = useState(true);
+  const [prefMembershipNotif, setPrefMembershipNotif] = useState(true);
+  const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>('default');
+
+  useEffect(() => {
+    if (notifPrefs) {
+      setPrefBlockAll(Boolean(notifPrefs.blockAll));
+      setPrefExternalAudio(notifPrefs.externalAudio !== false);
+      setPrefEpisodes(notifPrefs.notifyNewEpisodes !== false);
+      setPrefMembershipNotif(notifPrefs.notifyMembership !== false);
+    }
+    setPermissionStatus(externalNotificationService.getPermission());
+  }, [notifPrefs]);
+
+  const handleToggleBlockAll = async (checked: boolean) => {
+    setPrefBlockAll(checked);
+    try {
+      await updateNotifPrefsMutation.mutateAsync({
+        blockAll: checked,
+        externalAudio: prefExternalAudio,
+        notifyNewEpisodes: prefEpisodes,
+        notifyMembership: prefMembershipNotif,
+        notifySystem: notifPrefs?.notifySystem !== false,
+      });
+      if (checked) {
+        toast.info('Đã bật chế độ Chặn thông báo (Không làm phiền). Mọi thông báo sẽ tạm dừng.');
+      } else {
+        toast.success('Đã tắt chế độ chặn thông báo.');
+      }
+    } catch {
+      toast.error('Lỗi khi lưu tùy chọn chặn thông báo');
+    }
+  };
+
+  const handleToggleExternalAudio = async (checked: boolean) => {
+    setPrefExternalAudio(checked);
+    if (checked && externalNotificationService.isSupported()) {
+      const granted = await externalNotificationService.requestPermission();
+      setPermissionStatus(externalNotificationService.getPermission());
+      if (granted) {
+        toast.success('Đã cấp quyền nhận thông báo audio mới ngoài app!');
+      } else {
+        toast.info('Trình duyệt chưa cho phép thông báo. Vui lòng bật quyền trong trình duyệt.');
+      }
+    }
+    try {
+      await updateNotifPrefsMutation.mutateAsync({
+        blockAll: prefBlockAll,
+        externalAudio: checked,
+        notifyNewEpisodes: prefEpisodes,
+        notifyMembership: prefMembershipNotif,
+        notifySystem: notifPrefs?.notifySystem !== false,
+      });
+    } catch {
+      toast.error('Lỗi lưu tùy chọn nhận thông báo ngoài app');
+    }
+  };
+
+  const handleTestSystemNotification = async () => {
+    if (prefBlockAll) {
+      toast.error('Bạn đang bật chế độ chặn thông báo!');
+      return;
+    }
+    const granted = await externalNotificationService.requestPermission();
+    setPermissionStatus(externalNotificationService.getPermission());
+    if (!granted) {
+      toast.error('Trình duyệt chưa cấp quyền hiển thị thông báo ngoài màn hình');
+      return;
+    }
+    const sent = await externalNotificationService.showSystemNotification('WaveLink • Thử Nghiệm Thông Báo 🎧', {
+      body: 'Thông báo audio mới ngoài app hoạt động tốt! Bạn sẽ nhận tin khi có tập mới.',
+      url: '/#/notifications',
+      tag: `test-settings-${Date.now()}`,
+    });
+    if (sent) {
+      toast.success('Đã gửi thông báo thử nghiệm ra ngoài app!');
+    } else {
+      toast.info('Thông báo đã được gửi (hoặc bị giới hạn tần suất chống spam).');
+    }
+  };
 
   // Preset anime/comic cover wallpapers
   const wallpaperPresets = [
@@ -313,67 +407,94 @@ export const SettingsPage: React.FC = () => {
         </div>
 
         {/* 2. Quản lý Hồ sơ & Tên hiển thị & Hình nền */}
-        <div className="card-comic p-4 bg-white flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <i className="ri-user-settings-fill text-base text-[#3A86FF]" />
-            <span className="font-extrabold text-xs uppercase text-black">Hồ Sơ & Hình Nền Tài Khoản</span>
+        {user?.isGuest ? (
+          <div className="card-comic p-4 bg-white flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <i className="ri-user-smile-fill text-base text-[#3A86FF]" />
+              <span className="font-extrabold text-xs uppercase text-black">Tài Khoản Khách Vãng Lai</span>
+            </div>
+            <p className="text-xs font-semibold text-gray-600">
+              Bạn đang duyệt ở chế độ khách nghe thử (chưa đăng nhập). Đăng nhập hoặc tạo tài khoản để lưu vĩnh viễn tiến trình nghe, tùy chỉnh tên hiển thị và bảo mật tài khoản.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => navigate('/login')}
+                className="btn-comic btn-comic-primary text-xs py-2 font-black"
+              >
+                <i className="ri-login-box-line font-bold" /> Đăng Nhập
+              </button>
+              <button
+                onClick={() => navigate('/register')}
+                className="btn-comic btn-comic-white text-xs py-2 font-black"
+              >
+                <i className="ri-user-add-line font-bold" /> Đăng Ký
+              </button>
+            </div>
           </div>
+        ) : (
+          <div className="card-comic p-4 bg-white flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <i className="ri-user-settings-fill text-base text-[#3A86FF]" />
+              <span className="font-extrabold text-xs uppercase text-black">Hồ Sơ & Hình Nền Tài Khoản</span>
+            </div>
 
-          {/* User info preview */}
-          <div className="card-comic-sm p-3 bg-gray-50 flex items-center gap-3 relative overflow-hidden">
-            {user?.coverUrl && (
-              <div
-                className="absolute inset-0 bg-cover bg-center opacity-30"
-                style={{ backgroundImage: `url(${user.coverUrl})` }}
-              />
-            )}
-            <div className="relative z-10 w-12 h-12 rounded-full border-2 border-black bg-[#FFE600] flex items-center justify-center font-black text-lg overflow-hidden shrink-0 shadow-comic-sm">
-              {user?.avatarUrl ? (
-                <img src={user.avatarUrl} alt={user.username} className="w-full h-full object-cover" />
-              ) : (
-                (user?.username || 'U').substring(0, 2).toUpperCase()
+            {/* User info preview */}
+            <div className="card-comic-sm p-3 bg-gray-50 flex items-center gap-3 relative overflow-hidden">
+              {user?.coverUrl && (
+                <div
+                  className="absolute inset-0 bg-cover bg-center opacity-30"
+                  style={{ backgroundImage: `url(${user.coverUrl})` }}
+                />
               )}
+              <div className="relative z-10 w-12 h-12 rounded-full border-2 border-black bg-[#FFE600] flex items-center justify-center font-black text-lg overflow-hidden shrink-0 shadow-comic-sm">
+                {user?.avatarUrl ? (
+                  <img src={user.avatarUrl} alt={user.username} className="w-full h-full object-cover" />
+                ) : (
+                  (user?.username || 'U').substring(0, 2).toUpperCase()
+                )}
+              </div>
+              <div className="relative z-10 flex flex-col min-w-0 flex-1">
+                <span className="font-black text-sm text-black truncate">{user?.username || 'Khách vãng lai'}</span>
+                <span className="text-xs font-semibold text-gray-600 truncate">{user?.email || 'Chưa liên kết email'}</span>
+                <span className="text-[10px] font-bold text-gray-500">
+                  Hình nền: {user?.coverUrl ? 'Đã cài đặt hình nền riêng' : 'Mặc định'}
+                </span>
+              </div>
             </div>
-            <div className="relative z-10 flex flex-col min-w-0 flex-1">
-              <span className="font-black text-sm text-black truncate">{user?.username || 'Khách vãng lai'}</span>
-              <span className="text-xs font-semibold text-gray-600 truncate">{user?.email || 'Chưa liên kết email'}</span>
-              <span className="text-[10px] font-bold text-gray-500">
-                Hình nền: {user?.coverUrl ? 'Đã cài đặt hình nền riêng' : 'Mặc định'}
-              </span>
+
+            {/* Quick actions for profile */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  setNameInput(user?.username || '');
+                  setIsEditNameOpen(true);
+                }}
+                className="btn-comic text-xs py-2 px-3 bg-gray-100 flex items-center justify-center gap-1.5"
+              >
+                <i className="ri-edit-2-line font-bold" /> Đổi Tên Hiển Thị
+              </button>
+              <button
+                onClick={() => {
+                  setCoverInput(user?.coverUrl || '');
+                  setIsCoverOpen(true);
+                }}
+                className="btn-comic text-xs py-2 px-3 bg-[#FFE600] text-black flex items-center justify-center gap-1.5"
+              >
+                <i className="ri-image-add-line font-bold" /> Đổi Hình Nền
+              </button>
             </div>
-          </div>
 
-          {/* Quick actions for profile */}
-          <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={() => {
-                setNameInput(user?.username || '');
-                setIsEditNameOpen(true);
-              }}
-              className="btn-comic text-xs py-2 px-3 bg-gray-100 flex items-center justify-center gap-1.5"
+              onClick={() => setIsPasswordOpen(true)}
+              className="btn-comic text-xs py-2 px-3 bg-white border-2 border-black flex items-center justify-center gap-1.5"
             >
-              <i className="ri-edit-2-line font-bold" /> Đổi Tên Hiển Thị
-            </button>
-            <button
-              onClick={() => {
-                setCoverInput(user?.coverUrl || '');
-                setIsCoverOpen(true);
-              }}
-              className="btn-comic text-xs py-2 px-3 bg-[#FFE600] text-black flex items-center justify-center gap-1.5"
-            >
-              <i className="ri-image-add-line font-bold" /> Đổi Hình Nền
+              <i className="ri-lock-password-line font-bold" /> Đổi Mật Khẩu Đăng Nhập
             </button>
           </div>
+        )}
 
-          <button
-            onClick={() => setIsPasswordOpen(true)}
-            className="btn-comic text-xs py-2 px-3 bg-white border-2 border-black flex items-center justify-center gap-1.5"
-          >
-            <i className="ri-lock-password-line font-bold" /> Đổi Mật Khẩu Đăng Nhập
-          </button>
-        </div>
-
-        {/* 3. Liên kết tài khoản Google */}
+        {/* 3. Liên kết tài khoản Google (chỉ cho user đã đăng nhập) */}
+        {!user?.isGuest && (
         <div className="card-comic p-4 bg-white flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -441,8 +562,10 @@ export const SettingsPage: React.FC = () => {
             </div>
           )}
         </div>
+        )}
 
-        {/* 4. Gói VIP, Hủy VIP & Hoàn Tiền */}
+        {/* 4. Gói VIP, Hủy VIP & Hoàn Tiền (chỉ cho user đã đăng nhập) */}
+        {!user?.isGuest && (
         <div className="card-comic p-4 bg-white flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -501,6 +624,7 @@ export const SettingsPage: React.FC = () => {
             </button>
           </div>
         </div>
+        )}
 
         {/* 5. Cài đặt phát Audio mặc định */}
         <div className="card-comic p-4 bg-white flex flex-col gap-3">
@@ -531,7 +655,106 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 6. Khiếu Nại & Góp Ý */}
+        {/* 6. Cài Đặt Thông Báo & Nhận Tin Ngoài App */}
+        <div className="card-comic p-4 bg-white flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <i className="ri-notification-3-fill text-base text-[#3A86FF]" />
+              <span className="font-extrabold text-xs uppercase text-black">
+                Cài Đặt Thông Báo & Nhận Tin Ngoài App
+              </span>
+            </div>
+            <button
+              onClick={() => navigate('/notifications')}
+              className="badge-comic badge-comic-yellow text-[9px] font-black hover:scale-105 cursor-pointer"
+              title="Mở Hộp thư thông báo"
+            >
+              HỘP THƯ ({unreadNotifCount} MỚI) →
+            </button>
+          </div>
+
+          <p className="text-xs font-semibold text-gray-600">
+            Tùy biến nhận thông báo audio mới ngoài app, chặn thông báo khi nghỉ ngơi và cập nhật nội dung phù hợp với WaveLink.
+          </p>
+
+          <div className="flex flex-col gap-2.5">
+            {/* Chặn thông báo (Không làm phiền) */}
+            <div className={`p-3 rounded-lg border-2 ${prefBlockAll ? 'bg-red-50 border-red-500' : 'bg-gray-50 border-black'}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <strong className="text-black text-xs font-black flex items-center gap-1.5">
+                    <i className="ri-prohibited-line text-red-500 text-base" /> Chặn toàn bộ thông báo (Không làm phiền)
+                  </strong>
+                  <p className="text-[11px] text-gray-600 mt-0.5">
+                    Tắt tất cả thông báo trong app và hệ thống ngoài app để tập trung nghe truyện
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={prefBlockAll}
+                  onChange={(e) => handleToggleBlockAll(e.target.checked)}
+                  className="w-4 h-4 border-2 border-black rounded accent-red-600 cursor-pointer"
+                />
+              </div>
+              {prefBlockAll && (
+                <div className="mt-2 text-[10px] text-red-700 font-bold bg-white/70 p-1.5 rounded border border-red-200">
+                  ⚠️ Đang bật chế độ chặn: Mọi thông báo sẽ tạm dừng để không làm phiền bạn.
+                </div>
+              )}
+            </div>
+
+            {/* Nhận thông báo audio mới ngoài app */}
+            <div className={`p-3 rounded-lg border-2 ${prefExternalAudio && !prefBlockAll ? 'bg-blue-50 border-[#3A86FF]' : 'bg-gray-50 border-black opacity-85'}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <strong className="text-black text-xs font-black flex items-center gap-1.5">
+                    <i className="ri-notification-badge-line text-[#3A86FF] text-base" /> Nhận thông báo audio mới ngoài app
+                  </strong>
+                  <p className="text-[11px] text-gray-600 mt-0.5">
+                    Gửi thông báo màn hình hệ điều hành (Windows/Desktop) khi có tập truyện mới được cập nhật, ngay cả khi đang đóng hoặc ẩn ứng dụng
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  disabled={prefBlockAll}
+                  checked={prefExternalAudio && !prefBlockAll}
+                  onChange={(e) => handleToggleExternalAudio(e.target.checked)}
+                  className="w-4 h-4 border-2 border-black rounded accent-[#3A86FF] cursor-pointer"
+                />
+              </div>
+
+              <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-gray-200">
+                <span className="text-[10px] text-gray-600 font-semibold">
+                  Trạng thái quyền: {permissionStatus === 'granted' ? (
+                    <span className="text-green-600 font-bold">✓ Đã cấp quyền hệ thống</span>
+                  ) : permissionStatus === 'denied' ? (
+                    <span className="text-red-500 font-bold">✕ Đang bị chặn bởi trình duyệt</span>
+                  ) : (
+                    <span className="text-yellow-600 font-bold">Chưa cấp quyền</span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleTestSystemNotification}
+                  disabled={prefBlockAll}
+                  className="btn-comic text-[10px] py-1 px-2.5 bg-white hover:bg-gray-100 flex items-center gap-1"
+                >
+                  <i className="ri-send-plane-line" /> Thử gửi thông báo ngoài app
+                </button>
+              </div>
+            </div>
+
+            {/* Chống spam & Bảo vệ trải nghiệm */}
+            <div className="p-2.5 bg-[#FEF9C3] border-2 border-black rounded-lg flex items-start gap-2">
+              <i className="ri-shield-check-fill text-base text-yellow-700 shrink-0 mt-0.5" />
+              <div className="text-[10px] text-gray-800 leading-tight">
+                <strong className="font-extrabold text-black">Chế độ lọc thông minh & Chống Spam:</strong> Hệ thống tự động giới hạn tần suất, không gửi lặp lại các thông báo cùng loại và chỉ tóm tắt các nội dung audio thực sự hữu ích.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 7. Khiếu Nại & Góp Ý */}
         <div className="card-comic p-4 bg-white flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -551,7 +774,7 @@ export const SettingsPage: React.FC = () => {
           </button>
         </div>
 
-        {/* 7. Bộ nhớ đệm & Đăng xuất */}
+        {/* 8. Bộ nhớ đệm & Đăng xuất */}
         <div className="card-comic p-4 bg-white flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <span className="font-extrabold text-xs uppercase text-black">Hệ Thống & Bộ Nhớ Tạm</span>
@@ -573,12 +796,14 @@ export const SettingsPage: React.FC = () => {
             </button>
           </div>
 
-          <button
-            onClick={() => setIsLogoutModalOpen(true)}
-            className="btn-comic btn-comic-red text-xs py-2.5 px-3 flex items-center justify-center gap-1.5 mt-1"
-          >
-            <i className="ri-logout-box-line font-bold" /> Đăng Xuất Khỏi Thiết Bị
-          </button>
+          {!user?.isGuest && (
+            <button
+              onClick={() => setIsLogoutModalOpen(true)}
+              className="btn-comic btn-comic-red text-xs py-2.5 px-3 flex items-center justify-center gap-1.5 mt-1"
+            >
+              <i className="ri-logout-box-line font-bold" /> Đăng Xuất Khỏi Thiết Bị
+            </button>
+          )}
         </div>
       </div>
 

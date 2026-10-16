@@ -77,7 +77,7 @@ class LocalDbManager {
   }
 
   // Helper generators for fallback
-  generateEpisodes(totalDuration: number, blockSize: number = 14400, audioId: number = Date.now()): Episode[] {
+  generateEpisodes(totalDuration: number, blockSize: number = 14400, audioId: number = Date.now(), isVip: boolean = false): Episode[] {
     const duration = totalDuration > 0 ? totalDuration : 57600;
     const count = Math.ceil(duration / blockSize);
     const eps: Episode[] = [];
@@ -94,6 +94,7 @@ class LocalDbManager {
         duration: end - start,
         completed: false,
         progressPercent: 0,
+        isVip,
       });
     }
     return eps;

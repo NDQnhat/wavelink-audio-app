@@ -46,6 +46,32 @@ export function useMarkAllNotificationsAsRead() {
   });
 }
 
+export function useDeleteNotification() {
+  const queryClient = useQueryClient();
+  const { isLive } = useAuthStore();
+
+  return useMutation({
+    mutationFn: (id: number | string) => api.notification.deleteNotification(id, isLive),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['unread-notification-count'] });
+    },
+  });
+}
+
+export function useDeleteAllNotifications() {
+  const queryClient = useQueryClient();
+  const { isLive } = useAuthStore();
+
+  return useMutation({
+    mutationFn: () => api.notification.deleteAllNotifications(isLive),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['unread-notification-count'] });
+    },
+  });
+}
+
 export function useNotificationPreferences() {
   const { isLive } = useAuthStore();
   return useQuery({

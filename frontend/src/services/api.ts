@@ -10,6 +10,8 @@ import { historyService } from './historyService';
 import { notificationService } from './notificationService';
 import { membershipService } from './membershipService';
 import { userService } from './userService';
+import { guestSessionService } from './guestSessionService';
+import { communityService } from './communityService';
 
 export const api = {
   localDb,
@@ -24,6 +26,8 @@ export const api = {
   notification: notificationService,
   membership: membershipService,
   user: userService,
+  guestSession: guestSessionService,
+  community: communityService,
 
   async init(): Promise<boolean> {
     await localDb.init();

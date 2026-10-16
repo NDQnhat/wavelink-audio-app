@@ -61,6 +61,11 @@ func InitDatabase(driver, source string, isProduction bool) (*gorm.DB, error) {
 	}
 	slog.Info(" Kết nối cơ sở dữ liệu thành công", "driver", driver)
 
+	// Luôn tự động AutoMigrate để bổ sung bảng/cột mới mà không mất dữ liệu cũ
+	if err := AutoMigrate(db); err != nil {
+		slog.Warn("Cảnh báo GORM AutoMigrate khi khởi động", "error", err)
+	}
+
 	// Khởi động Background Cleaner dọn dẹp tài khoản Guest rác
 	StartGuestCleanupCron(db)
 
@@ -70,7 +75,7 @@ func InitDatabase(driver, source string, isProduction bool) (*gorm.DB, error) {
 // AutoMigrate tự động đồng bộ hóa cấu trúc Schema từ các Struct Domain
 func AutoMigrate(db *gorm.DB) error {
 	slog.Info("Đang chạy GORM AutoMigrate cho tất cả thực thể...")
-	return db.AutoMigrate(
+	err := db.AutoMigrate(
 		&domain.User{},
 		&domain.Category{},
 		&domain.Tag{},
@@ -82,42 +87,120 @@ func AutoMigrate(db *gorm.DB) error {
 		&domain.Notification{},
 		&domain.NotificationPreference{},
 		&domain.MembershipOrder{},
+		&domain.SystemSetting{},
+		&domain.CommunityMessage{},
 	)
+	if err != nil {
+		slog.Warn("GORM AutoMigrate gặp cảnh báo", "error", err)
+	}
+
+	// Đảm bảo an toàn tuyệt đối cho MySQL/SQLite nếu bảng đã tồn tại từ migration cũ
+	m := db.Migrator()
+	if !m.HasColumn(&domain.Episode{}, "is_vip") {
+		_ = m.AddColumn(&domain.Episode{}, "is_vip")
+	}
+	if !m.HasColumn(&domain.Audio{}, "is_vip_only") {
+		_ = m.AddColumn(&domain.Audio{}, "is_vip_only")
+	}
+	if !m.HasColumn(&domain.Audio{}, "created_by") {
+		_ = m.AddColumn(&domain.Audio{}, "created_by")
+	}
+	if !m.HasColumn(&domain.NotificationPreference{}, "external_audio") {
+		_ = m.AddColumn(&domain.NotificationPreference{}, "external_audio")
+	}
+	if !m.HasColumn(&domain.NotificationPreference{}, "block_all") {
+		_ = m.AddColumn(&domain.NotificationPreference{}, "block_all")
+	}
+	if !m.HasColumn(&domain.NotificationPreference{}, "welcome_seeded") {
+		_ = m.AddColumn(&domain.NotificationPreference{}, "welcome_seeded")
+	}
+
+	return err
 }
 
 // SeedInitialData nạp danh mục, tag và chỉ tạo tài khoản mẫu nếu KHÔNG PHẢI Production
 func SeedInitialData(db *gorm.DB, isProduction bool) error {
-	// 1. Luôn Seed Thể loại cơ bản nếu trống
-	var catCount int64
-	db.Model(&domain.Category{}).Count(&catCount)
-	if catCount == 0 {
-		categories := []domain.Category{
-			{Name: "Tiên Hiệp", Slug: "tien-hiep", Description: "Tu chân, phi thăng, đại đạo", Color: "primary"},
-			{Name: "Kiếm Hiệp", Slug: "kiem-hiep", Description: "Giang hồ ân oán, võ lâm", Color: "warning"},
-			{Name: "Huyền Huyễn", Slug: "huyen-huan", Description: "Ma pháp, thế giới kỳ ảo", Color: "accent"},
-			{Name: "Trinh Thám", Slug: "trinh-tham", Description: "Phá án, suy luận, hình sự", Color: "neutral"},
-			{Name: "Đô Thị", Slug: "do-thi", Description: "Thương trường, hào môn, dị năng", Color: "success"},
-			{Name: "Khoa Huyễn", Slug: "khoa-huan", Description: "Tương lai, cơ giáp, tinh tế", Color: "secondary"},
-		}
-		for _, cat := range categories {
-			db.FirstOrCreate(&cat, domain.Category{Slug: cat.Slug})
+	// 1. Luôn Seed Thể loại đầy đủ
+	categories := []domain.Category{
+		{Name: "Xuyên Không", Slug: "xuyen-khong", Description: "Du hành không gian, xuyên qua thế giới khác", Color: "primary"},
+		{Name: "Xuyên Nhanh", Slug: "xuyen-nhanh", Description: "Khoái xuyên, thực hiện nhiệm vụ qua nhiều thế giới", Color: "secondary"},
+		{Name: "Sảng Văn", Slug: "sang-van", Description: "Nội dung giải trí, nhân vật chính bá đạo thuận buồm xuôi gió", Color: "warning"},
+		{Name: "Hệ Thống", Slug: "he-thong", Description: "Nhân vật chính sở hữu hệ thống hỗ trợ", Color: "accent"},
+		{Name: "Trọng Sinh", Slug: "trong-sinh", Description: "Chết đi sống lại, bắt đầu lại cuộc đời", Color: "success"},
+		{Name: "Võng Du", Slug: "vong-du", Description: "Thế giới game online, thực tế ảo", Color: "neutral"},
+		{Name: "Mạt Thế", Slug: "mat-the", Description: "Tận thế, thây ma, sinh tồn khắc nghiệt", Color: "danger"},
+		{Name: "Dị Năng", Slug: "di-nang", Description: "Năng lực đặc biệt, siêu năng lực", Color: "primary"},
+		{Name: "Vô Địch Lưu", Slug: "vo-dich", Description: "Vừa xuất hiện đã vô địch thiên hạ", Color: "warning"},
+		{Name: "Lịch Sử Quân Sự", Slug: "lich-su-quan-su", Description: "Chiến tranh, mưu lược, cải biến lịch sử", Color: "secondary"},
+		{Name: "Linh Dị Ma Quái", Slug: "ma-kinh-di", Description: "Kinh dị, trừ tà, bắt ma quái", Color: "neutral"},
+		{Name: "Đồng Nhân", Slug: "dong-nhan", Description: "Phóng tác dựa trên tác phẩm hoặc nhân vật có sẵn", Color: "accent"},
+		{Name: "Cung Đấu Gia Đấu", Slug: "cung-dau", Description: "Tranh giành quyền lực chốn hoàng cung, gia tộc", Color: "danger"},
+		{Name: "Khoa Huyễn", Slug: "khoa-huyen", Description: "Khoa học viễn tưởng, tương lai, cơ giáp, tinh tế", Color: "secondary"},
+		{Name: "Huyền Huyễn", Slug: "huyen-huyen", Description: "Ma pháp, thế giới kỳ ảo, tu vi phân tầng", Color: "accent"},
+		{Name: "Tiên Hiệp", Slug: "tien-hiep", Description: "Tu chân, phi thăng, đại đạo, nghịch thiên", Color: "primary"},
+		{Name: "Kiếm Hiệp", Slug: "kiem-hiep", Description: "Giang hồ ân oán, võ lâm hiệp nghĩa", Color: "warning"},
+		{Name: "Đô Thị", Slug: "do-thi", Description: "Thương trường, hào môn, đời sống hiện đại", Color: "success"},
+		{Name: "Dị Giới", Slug: "di-gioi", Description: "Thế giới song song, nền văn minh khác biệt", Color: "primary"},
+		{Name: "Kỳ Huyễn", Slug: "ky-huyen", Description: "Huyền bí, phép thuật Tây phương, rồng và ma thuật", Color: "secondary"},
+	}
+	for _, cat := range categories {
+		var existing domain.Category
+		if err := db.Where("slug = ? OR name = ?", cat.Slug, cat.Name).First(&existing).Error; err == nil {
+			db.Model(&existing).Updates(map[string]interface{}{
+				"name":        cat.Name,
+				"slug":        cat.Slug,
+				"description": cat.Description,
+				"color":       cat.Color,
+			})
+		} else {
+			db.Create(&cat)
 		}
 	}
 
-	// 2. Luôn Seed Thẻ cơ bản nếu trống
-	var tagCount int64
-	db.Model(&domain.Tag{}).Count(&tagCount)
-	if tagCount == 0 {
-		tags := []domain.Tag{
-			{Name: "Tu tiên", Slug: "tu-tien"},
-			{Name: "Audio dài", Slug: "audio-dai"},
-			{Name: "Dị giới", Slug: "di-gioi"},
-			{Name: "Xuyên không", Slug: "xuyen-khong"},
-			{Name: "Hài hước", Slug: "hai-huoc"},
-			{Name: "Trọn bộ", Slug: "tron-bo"},
-		}
-		for _, tag := range tags {
-			db.FirstOrCreate(&tag, domain.Tag{Slug: tag.Slug})
+	// 2. Luôn Seed Thẻ phân loại đầy đủ
+	tags := []domain.Tag{
+		{Name: "Xuyên Không", Slug: "xuyen-khong"},
+		{Name: "Xuyên Nhanh", Slug: "xuyen-nhanh"},
+		{Name: "Xuyên Qua Dị Giới", Slug: "xuyen-qua-di-gioi"},
+		{Name: "Xuyên Thư", Slug: "xuyen-thu"},
+		{Name: "Phản Xuyên", Slug: "phan-xuyen"},
+		{Name: "Vô Địch Lưu", Slug: "vo-dich-luu"},
+		{Name: "Cẩu Đạo", Slug: "cau-dao"},
+		{Name: "Hắc Ám", Slug: "hac-am"},
+		{Name: "Vả Mặt", Slug: "va-mat"},
+		{Name: "Thông Minh", Slug: "thong-minh"},
+		{Name: "Hài Bựa", Slug: "hai-bua"},
+		{Name: "Điểm Danh", Slug: "diem-danh"},
+		{Name: "Không Gian Tùy Thân", Slug: "khong-gian-tuy-than"},
+		{Name: "Tiến Hóa Vô Hạn", Slug: "tien-hoa-vo-han"},
+		{Name: "Trăm Lần Bạo Kích", Slug: "tram-lan-bao-kich"},
+		{Name: "Đô Thị Tu Tiên", Slug: "do-thi-tu-tien"},
+		{Name: "Thần Hào", Slug: "than-hao"},
+		{Name: "Hậu Cung", Slug: "hau-cung"},
+		{Name: "Đơn Nữ Chính", Slug: "don-nu-chinh"},
+		{Name: "Không Nữ Chính", Slug: "khong-nu-chinh"},
+		{Name: "Toàn Dân Chuyển Chức", Slug: "toan-dan-chuyen-chuc"},
+		{Name: "Lãnh Chúa Chiến Tranh", Slug: "lanh-chua-chien-tranh"},
+		{Name: "Quy Tắc Quái Đàm", Slug: "quy-tac-quai-dam"},
+		{Name: "Sát Phạt Quyết Đoán", Slug: "sat-phat-quyet-doan"},
+		{Name: "Heo Ăn Thịt Hổ", Slug: "heo-an-thit-ho"},
+		{Name: "Giả HEO Ăn Hổ", Slug: "gia-heo-an-ho"},
+		{Name: "Nuôi Thú Cưng", Slug: "nuoi-thu-cung"},
+		{Name: "Tận Thế Tái Sinh", Slug: "tan-the-tai-sinh"},
+		{Name: "Full Trọn Bộ", Slug: "full-tron-bo"},
+		{Name: "Siêu Phẩm Cày Đêm", Slug: "sieu-pham-cay-dem"},
+		{Name: "Trên 1000 Chương", Slug: "tren-1000-chuong"},
+		{Name: "Tiến Độ Nhanh", Slug: "tien-do-nhanh"},
+	}
+	for _, tag := range tags {
+		var existing domain.Tag
+		if err := db.Where("slug = ? OR name = ?", tag.Slug, tag.Name).First(&existing).Error; err == nil {
+			db.Model(&existing).Updates(map[string]interface{}{
+				"name": tag.Name,
+				"slug": tag.Slug,
+			})
+		} else {
+			db.Create(&tag)
 		}
 	}
 
@@ -182,6 +265,69 @@ func SeedInitialData(db *gorm.DB, isProduction bool) error {
 		{
 			Username:     "regular_user",
 			Email:        "user@audioapp.com",
+			PasswordHash: string(userPass),
+			Role:         domain.RoleUser,
+			Membership:   domain.MembershipFree,
+			VipExpiresAt: nil,
+			IsGuest:      false,
+		},
+		{
+			Username:     "HoangAudio",
+			Email:        "hoang@audioapp.com",
+			PasswordHash: string(vipPass),
+			Role:         domain.RoleVIP,
+			Membership:   domain.MembershipVIP,
+			VipExpiresAt: &vipExpiry,
+			IsGuest:      false,
+		},
+		{
+			Username:     "MinhNhat99",
+			Email:        "minhnhat@audioapp.com",
+			PasswordHash: string(vipPass),
+			Role:         domain.RoleVIP,
+			Membership:   domain.MembershipVIP,
+			VipExpiresAt: &vipExpiry,
+			IsGuest:      false,
+		},
+		{
+			Username:     "LanAnh_VIP",
+			Email:        "lananh@audioapp.com",
+			PasswordHash: string(vipPass),
+			Role:         domain.RoleVIP,
+			Membership:   domain.MembershipVIP,
+			VipExpiresAt: &vipExpiry,
+			IsGuest:      false,
+		},
+		{
+			Username:     "TieuViVu",
+			Email:        "tieuvivu@audioapp.com",
+			PasswordHash: string(userPass),
+			Role:         domain.RoleUser,
+			Membership:   domain.MembershipFree,
+			VipExpiresAt: nil,
+			IsGuest:      false,
+		},
+		{
+			Username:     "BachNgocSach",
+			Email:        "bachngoc@audioapp.com",
+			PasswordHash: string(vipPass),
+			Role:         domain.RoleVIP,
+			Membership:   domain.MembershipVIP,
+			VipExpiresAt: &vipExpiry,
+			IsGuest:      false,
+		},
+		{
+			Username:     "PhongVanAudio",
+			Email:        "phongvan@audioapp.com",
+			PasswordHash: string(vipPass),
+			Role:         domain.RoleVIP,
+			Membership:   domain.MembershipVIP,
+			VipExpiresAt: &vipExpiry,
+			IsGuest:      false,
+		},
+		{
+			Username:     "ThienDaoDocGia",
+			Email:        "thiendao@audioapp.com",
 			PasswordHash: string(userPass),
 			Role:         domain.RoleUser,
 			Membership:   domain.MembershipFree,
@@ -254,22 +400,33 @@ func SeedInitialData(db *gorm.DB, isProduction bool) error {
 	return nil
 }
 
-// StartGuestCleanupCron chạy nền mỗi 24h để dọn dẹp các tài khoản Guest rác cũ hơn 30 ngày
+// StartGuestCleanupCron chạy nền dọn dẹp toàn bộ tài khoản khách rác cũ để tối ưu DB
 func StartGuestCleanupCron(db *gorm.DB) {
 	go func() {
-		ticker := time.NewTicker(24 * time.Hour)
-		for range ticker.C {
-			cutoff := time.Now().Add(-30 * 24 * time.Hour)
-			// Xóa các guest được tạo hơn 30 ngày trước và không có tiến trình nghe nào
+		cleanup := func() {
+			if !db.Migrator().HasTable("users") {
+				return
+			}
+			// Xóa các guest cũ và tiến trình/lịch sử mồ côi
 			res := db.Exec(`
 				DELETE FROM users 
-				WHERE is_guest = 1 
-				  AND created_at < ? 
-				  AND id NOT IN (SELECT DISTINCT user_id FROM listening_progress)
-			`, cutoff)
+				WHERE is_guest = 1
+			`)
 			if res.Error == nil && res.RowsAffected > 0 {
-				slog.Info("🧹 Đã dọn dẹp tài khoản khách rác cũ", "deleted_rows", res.RowsAffected)
+				slog.Info("🧹 Đã dọn dẹp tài khoản khách rác cũ trong DB", "deleted_rows", res.RowsAffected)
 			}
+			if db.Migrator().HasTable("listening_progress") {
+				db.Exec(`DELETE FROM listening_progress WHERE user_id NOT IN (SELECT id FROM users)`)
+			}
+			if db.Migrator().HasTable("listening_history") {
+				db.Exec(`DELETE FROM listening_history WHERE user_id NOT IN (SELECT id FROM users)`)
+			}
+		}
+
+		cleanup()
+		ticker := time.NewTicker(24 * time.Hour)
+		for range ticker.C {
+			cleanup()
 		}
 	}()
 }

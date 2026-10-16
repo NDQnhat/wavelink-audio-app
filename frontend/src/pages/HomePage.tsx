@@ -7,6 +7,7 @@ import { useCategories } from '@/hooks/useCategories';
 import { usePlayerStore } from '@/stores/playerStore';
 import { useAuthStore } from '@/stores/authStore';
 import { LoadingState } from '@/components/common/LoadingState';
+import { toast } from '@/components/ui/Toast';
 import { formatTime } from '@/lib/utils';
 import { AudioItem, Episode } from '@/types';
 
@@ -180,6 +181,14 @@ export const HomePage: React.FC = () => {
                   if (playingAudio?.id === audio.id) {
                     togglePlay();
                   } else {
+                    const isVipOrAdmin = user?.role === 'VIP' || user?.role === 'ADMIN' || user?.membership === 'VIP';
+                    const isVipAudio = Boolean(audio.isVIPOnly || audio.isVipOnly);
+                    const totalEps = audio.totalEpisodes || audio.episodes?.length || 1;
+                    if (isVipAudio && !isVipOrAdmin && (totalEps <= 1 || (activeEp && activeEp.episodeNumber > 1))) {
+                      toast.error('Nội dung này độc quyền dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!');
+                      navigate('/membership');
+                      return;
+                    }
                     play(audio, activeEp, currentPosition);
                   }
                 };

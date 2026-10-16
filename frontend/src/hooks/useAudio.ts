@@ -29,6 +29,14 @@ export function useAudioEpisodes(audioId: number | string | undefined) {
   });
 }
 
+export function useImportQuota() {
+  const { isLive, user } = useAuthStore();
+  return useQuery({
+    queryKey: ['import-quota', isLive, user?.id, user?.role, user?.membership],
+    queryFn: () => api.audio.getImportQuota(isLive, user),
+  });
+}
+
 export function useImportYouTube() {
   const queryClient = useQueryClient();
   const { isLive, user } = useAuthStore();
@@ -38,6 +46,7 @@ export function useImportYouTube() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['audios'] });
       queryClient.invalidateQueries({ queryKey: ['stats'] });
+      queryClient.invalidateQueries({ queryKey: ['import-quota'] });
     },
   });
 }

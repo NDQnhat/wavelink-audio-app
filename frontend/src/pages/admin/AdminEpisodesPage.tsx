@@ -256,7 +256,14 @@ export const AdminEpisodesPage: React.FC = () => {
                       T{ep.episodeNumber}
                     </div>
                     <div className="flex flex-col min-w-0">
-                      <span className="font-extrabold text-xs text-black truncate leading-tight">{ep.title}</span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-extrabold text-xs text-black truncate leading-tight">{ep.title}</span>
+                        {Boolean(selectedAudio?.isVIPOnly || selectedAudio?.isVipOnly || ep.isVip) && (
+                          <span className="badge-comic badge-comic-purple text-[8px] py-0 px-1 font-black shrink-0">
+                            <i className="ri-vip-crown-fill" /> VIP {ep.episodeNumber === 1 ? '(PREVIEW)' : ''}
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[11px] font-mono text-gray-600 truncate mt-0.5">
                         {formatTime(ep.startSeconds)} → {formatTime(ep.endSeconds)} ({Math.round(((ep.endSeconds - ep.startSeconds) / 3600) * 10) / 10}h)
                       </span>

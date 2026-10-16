@@ -55,13 +55,18 @@ func (h *Handler) GetEpisodesByAudioID(c *gin.Context) {
 	audioID := c.Param("id")
 	userID := middleware.GetCurrentUserID(c)
 
+	var audio domain.Audio
+	_ = h.db.First(&audio, audioID)
+
 	var episodes []domain.Episode
 	if err := h.db.Where("audio_id = ?", audioID).Order("episode_number ASC").Find(&episodes).Error; err != nil {
 		response.Internal(c, "Lỗi lấy danh sách tập")
 		return
 	}
 
+	var currentUser domain.User
 	if userID > 0 {
+		h.db.First(&currentUser, userID)
 		var progresses []domain.ListeningProgress
 		h.db.Where("user_id = ? AND audio_id = ?", userID, audioID).Find(&progresses)
 		progMap := map[uint]domain.ListeningProgress{}
@@ -74,6 +79,28 @@ func (h *Handler) GetEpisodesByAudioID(c *gin.Context) {
 				episodes[i].ProgressPercent = p.ProgressPercent
 				episodes[i].PositionSeconds = p.PositionSeconds
 			}
+		}
+	} else {
+		currentUser = domain.User{Role: domain.RoleGuest, IsGuest: true, Membership: domain.MembershipFree}
+	}
+
+	isVipOrAdmin := currentUser.Role == domain.RoleAdmin || currentUser.Role == domain.RoleVIP || currentUser.Membership == domain.MembershipVIP
+	for i := range episodes {
+		if audio.IsVIPOnly {
+			episodes[i].IsVIP = true
+		}
+		if audio.IsVIPOnly || episodes[i].IsVIP {
+			if !isVipOrAdmin {
+				if len(episodes) <= 1 || episodes[i].EpisodeNumber > 1 {
+					episodes[i].IsLocked = true
+				} else {
+					episodes[i].IsLocked = false
+				}
+			} else {
+				episodes[i].IsLocked = false
+			}
+		} else {
+			episodes[i].IsLocked = false
 		}
 	}
 

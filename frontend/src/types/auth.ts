@@ -38,3 +38,19 @@ export interface AuthResponse {
   token: string;
   user: User;
 }
+
+export interface UserProfileData {
+  id: number;
+  username: string;
+  avatarUrl?: string;
+  coverUrl?: string;
+  role: UserRole;
+  membership?: string;
+  vipBadge: string;
+  totalHours: number;
+  uploadCount: number;
+  createdAt?: string;
+  isOwner?: boolean;
+  email?: string;
+  vipExpiresAt?: string | null;
+}

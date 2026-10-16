@@ -1,10 +1,14 @@
 import { axiosClient } from '@/lib/axiosClient';
-import { AudioItem, AudioFilter, YouTubePreviewData, ImportYouTubePayload, ImportResult } from '@/types';
+import { AudioItem, AudioFilter, YouTubePreviewData, ImportYouTubePayload, ImportResult, ImportQuota, User } from '@/types';
 import { localDb } from './localDb';
 import { extractYouTubeId, formatTime, formatDuration } from '@/lib/utils';
+import { guestSessionService } from './guestSessionService';
+import { useAuthStore } from '@/stores/authStore';
 
 export const audioService = {
   async getAudios(filter: AudioFilter = {}, isLive = true, currentUserId?: number): Promise<AudioItem[]> {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
+
     if (isLive) {
       try {
         const params = new URLSearchParams();
@@ -15,6 +19,8 @@ export const audioService = {
         if (filter.page) params.append('page', String(filter.page));
         if (filter.limit || filter.pageSize) params.append('limit', String(filter.limit || filter.pageSize));
         if (filter.my || filter.status === 'my') params.append('status', 'my');
+        if (filter.userId) params.append('userId', String(filter.userId));
+        else if (filter.createdBy) params.append('createdBy', String(filter.createdBy));
         if (filter.sort) params.append('sort', filter.sort);
 
         const res = await axiosClient.get<{ success: boolean; data: AudioItem[] }>(`/audios?${params.toString()}`);
@@ -23,7 +29,19 @@ export const audioService = {
           for (const item of res.data.data) {
             if (!map.has(item.id)) map.set(item.id, item);
           }
-          return Array.from(map.values());
+          let list = Array.from(map.values());
+
+          // Nếu là khách (chưa đăng nhập): ghép tiến trình từ sessionStorage
+          if (!token) {
+            list = guestSessionService.applyGuestProgressToAudios(list);
+            if (filter.status === 'listening') {
+              list = list.filter((a) => (a.progressPercent || 0) > 0 && (a.progressPercent || 0) < 95);
+            } else if (filter.status === 'completed') {
+              list = list.filter((a) => (a.progressPercent || 0) >= 95);
+            }
+          }
+
+          return list;
         }
       } catch (err) {
         console.warn('getAudios live API failed, fallback to local', err);
@@ -34,8 +52,16 @@ export const audioService = {
     const db = localDb.get();
     let list = [...(db.audios || [])];
 
+    if (!token) {
+      list = guestSessionService.applyGuestProgressToAudios(list);
+    }
+
     if (filter.status === 'my' || filter.my) {
       list = list.filter((a) => a.createdBy && a.createdBy === currentUserId);
+    }
+    if (filter.userId || filter.createdBy) {
+      const targetUID = String(filter.userId || filter.createdBy);
+      list = list.filter((a) => a.createdBy && String(a.createdBy) === targetUID);
     }
     if (filter.search) {
       const q = filter.search.toLowerCase();
@@ -54,9 +80,9 @@ export const audioService = {
       list = list.filter((a) => a.tags && a.tags.includes(filter.tag!));
     }
     if (filter.status === 'listening') {
-      list = list.filter((a) => (a.progressPercent || 0) > 0 && (a.progressPercent || 0) < 100);
+      list = list.filter((a) => (a.progressPercent || 0) > 0 && (a.progressPercent || 0) < 95);
     } else if (filter.status === 'completed') {
-      list = list.filter((a) => (a.progressPercent || 0) >= 100);
+      list = list.filter((a) => (a.progressPercent || 0) >= 95);
     } else if (filter.status === 'favorite') {
       list = list.filter((a) => a.isFavorite);
     }
@@ -76,11 +102,35 @@ export const audioService = {
   },
 
   async getAudioById(id: number | string, isLive = true): Promise<AudioItem | null> {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const user = useAuthStore.getState().user;
+    const isVipOrAdmin = user?.role === 'VIP' || user?.role === 'ADMIN' || user?.membership === 'VIP';
+
+    const enrichAudioEpisodes = (audioItem: AudioItem): AudioItem => {
+      if (audioItem.episodes && audioItem.episodes.length > 0) {
+        const isVipAudio = Boolean(audioItem.isVIPOnly || audioItem.isVipOnly);
+        const totalEps = audioItem.episodes.length;
+        audioItem.episodes = audioItem.episodes.map((ep) => {
+          const epIsVip = isVipAudio || Boolean(ep.isVip);
+          return {
+            ...ep,
+            isVip: epIsVip,
+            isLocked: epIsVip && !isVipOrAdmin && (totalEps <= 1 || ep.episodeNumber > 1),
+          };
+        });
+      }
+      return audioItem;
+    };
+
     if (isLive) {
       try {
         const res = await axiosClient.get<{ success: boolean; data: AudioItem }>(`/audios/${id}`);
         if (res.data.success && res.data.data) {
-          return res.data.data;
+          let item = res.data.data;
+          if (!token) {
+            item = guestSessionService.applyGuestProgressToAudio(item);
+          }
+          return enrichAudioEpisodes(item);
         }
       } catch (err) {
         console.warn('getAudioById live API failed, fallback to local', err);
@@ -88,8 +138,11 @@ export const audioService = {
     }
 
     const db = localDb.get();
-    const item = db.audios.find((a) => String(a.id) === String(id));
-    return item || null;
+    let item = db.audios.find((a) => String(a.id) === String(id));
+    if (item && !token) {
+      item = guestSessionService.applyGuestProgressToAudio(item);
+    }
+    return item ? enrichAudioEpisodes(item) : null;
   },
 
   async updateAudio(id: number | string, data: Partial<AudioItem>, isLive = true): Promise<AudioItem | null> {
@@ -108,6 +161,17 @@ export const audioService = {
     const audio = db.audios.find((a) => String(a.id) === String(id));
     if (audio) {
       Object.assign(audio, data);
+      if (data.isVipOnly !== undefined || data.isVIPOnly !== undefined) {
+        const flag = Boolean(data.isVipOnly || data.isVIPOnly);
+        audio.isVIPOnly = flag;
+        audio.isVipOnly = flag;
+        if (audio.episodes) {
+          audio.episodes = audio.episodes.map((ep) => ({
+            ...ep,
+            isVip: flag,
+          }));
+        }
+      }
       localDb.save();
       return audio;
     }
@@ -266,6 +330,30 @@ export const audioService = {
     }
 
     // Local fallback
+    const user = useAuthStore.getState().user;
+    const isVipOrAdmin = user?.role === 'VIP' || user?.role === 'ADMIN' || user?.membership === 'VIP';
+
+    if (!isVipOrAdmin && user && !user.isGuest) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const quotaKey = `yt_import_quota_${user.id}`;
+      let count = 0;
+      try {
+        const saved = localStorage.getItem(quotaKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.date === todayStr) {
+            count = Number(parsed.count) || 0;
+          }
+        }
+      } catch {}
+
+      if (count >= 5) {
+        throw new Error('Bạn đã dùng hết lượt nhập link miễn phí hôm nay (5 lượt/ngày). Vui lòng nâng cấp VIP để không giới hạn.');
+      }
+
+      localStorage.setItem(quotaKey, JSON.stringify({ date: todayStr, count: count + 1 }));
+    }
+
     const db = localDb.get();
     const exists = db.audios.find((a) => a.youtubeVideoId === videoId);
     if (exists) {
@@ -282,7 +370,16 @@ export const audioService = {
     };
 
     const cat = db.categories.find((c) => c.id === payload.categoryId) || { id: 1, name: 'Tiên hiệp', slug: 'tien-hiep' };
-    const episodes = localDb.generateEpisodes(duration, blockSize);
+    const isVip = Boolean(payload.isVipOnly);
+    const rawEpisodes = localDb.generateEpisodes(duration, blockSize, Date.now(), isVip);
+    const totalEps = rawEpisodes.length;
+    const episodes = rawEpisodes.map((ep) => {
+      return {
+        ...ep,
+        isVip,
+        isLocked: isVip && !isVipOrAdmin && (totalEps <= 1 || ep.episodeNumber > 1),
+      };
+    });
 
     const newAudio: AudioItem = {
       id: Date.now(),
@@ -306,7 +403,8 @@ export const audioService = {
       progressPercent: 0,
       isFavorite: false,
       isVIPOnly: payload.isVipOnly,
-      createdBy: currentUserId,
+      isVipOnly: payload.isVipOnly,
+      createdBy: currentUserId || user?.id,
       episodes,
     };
 
@@ -315,5 +413,68 @@ export const audioService = {
     localDb.save();
 
     return { duplicate: false, audio: newAudio };
+  },
+
+  async getImportQuota(isLive = true, currentUser?: User | null): Promise<ImportQuota> {
+    const user = currentUser || useAuthStore.getState().user;
+
+    if (isLive) {
+      try {
+        const res = await axiosClient.get<{ success: boolean; data: ImportQuota }>('/audios/quota');
+        if (res.data.success && res.data.data) {
+          return res.data.data;
+        }
+      } catch (err) {
+        console.warn('getImportQuota live API failed, fallback to local', err);
+      }
+    }
+
+    if (!user || user.isGuest || user.role === 'GUEST') {
+      return {
+        isGuest: true,
+        isVipOrAdmin: false,
+        todayImportCount: 0,
+        maxImportsPerDay: 5,
+        remaining: 0,
+        canImport: false,
+        reason: 'Khách vãng lai không thể nhập link. Vui lòng đăng nhập hoặc nâng cấp tài khoản.',
+      };
+    }
+
+    const isVipOrAdmin = user.role === 'VIP' || user.role === 'ADMIN' || user.membership === 'VIP';
+    if (isVipOrAdmin) {
+      return {
+        isGuest: false,
+        isVipOrAdmin: true,
+        todayImportCount: 0,
+        maxImportsPerDay: 5,
+        remaining: 999999,
+        canImport: true,
+      };
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const quotaKey = `yt_import_quota_${user.id}`;
+    let count = 0;
+    try {
+      const saved = localStorage.getItem(quotaKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.date === todayStr) {
+          count = Number(parsed.count) || 0;
+        }
+      }
+    } catch {}
+
+    const remaining = Math.max(0, 5 - count);
+    return {
+      isGuest: false,
+      isVipOrAdmin: false,
+      todayImportCount: count,
+      maxImportsPerDay: 5,
+      remaining,
+      canImport: count < 5,
+      reason: count >= 5 ? 'Bạn đã dùng hết lượt nhập link miễn phí hôm nay (5 lượt/ngày).' : undefined,
+    };
   },
 };

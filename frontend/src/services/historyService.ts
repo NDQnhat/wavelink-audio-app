@@ -1,9 +1,18 @@
 import { axiosClient } from '@/lib/axiosClient';
 import { ListeningHistoryItem, RecordHistoryPayload } from '@/types';
 import { localDb } from './localDb';
+import { guestSessionService } from './guestSessionService';
+import { usePlayerStore } from '@/stores/playerStore';
 
 export const historyService = {
   async getRecentHistory(isLive = true): Promise<ListeningHistoryItem[]> {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
+
+    // Nếu chưa đăng nhập / là khách: lấy lịch sử từ sessionStorage
+    if (!token) {
+      return guestSessionService.getGuestHistory();
+    }
+
     if (isLive) {
       try {
         const res = await axiosClient.get<{ success: boolean; data: ListeningHistoryItem[] }>('/history');
@@ -20,6 +29,15 @@ export const historyService = {
   },
 
   async recordHistory(payload: RecordHistoryPayload, isLive = true): Promise<void> {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
+
+    // Nếu chưa đăng nhập / là khách: lưu vào sessionStorage, không lưu DB
+    if (!token) {
+      const state = usePlayerStore.getState();
+      guestSessionService.saveGuestHistory(payload, state.currentAudio, state.currentEpisode);
+      return;
+    }
+
     if (isLive) {
       try {
         await axiosClient.post('/history', {

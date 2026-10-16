@@ -10,6 +10,7 @@ import (
 	"audio-app-backend/core/domain"
 	"audio-app-backend/core/logic"
 	"audio-app-backend/infra/external"
+	"audio-app-backend/modules/notification"
 	"audio-app-backend/server/middleware"
 	"audio-app-backend/server/response"
 
@@ -32,6 +33,7 @@ type ImportYouTubeRequest struct {
 	Tags             []string `json:"tags"`
 	DurationSeconds  int      `json:"durationSeconds"`
 	BlockSizeSeconds int      `json:"blockSizeSeconds"`
+	IsVIPOnly        bool     `json:"isVipOnly"`
 }
 
 type UpdateAudioRequest struct {
@@ -47,6 +49,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	audios := rg.Group("/audios")
 	{
 		audios.GET("", h.ListAudios)
+		audios.GET("/quota", h.GetImportQuota)
 		audios.GET("/preview-youtube", h.PreviewYouTube)
 		audios.POST("/preview-youtube", h.PreviewYouTube)
 		audios.GET("/:id", h.GetAudioByID)
@@ -103,6 +106,21 @@ func (h *Handler) ListAudios(c *gin.Context) {
 		query = query.Where("youtube_videos.id IN (SELECT DISTINCT audio_id FROM listening_progress WHERE user_id = ? AND progress_percent > 0 AND (progress_percent < 95 OR completed = 0))", userID)
 	} else if status == "completed" && userID > 0 {
 		query = query.Where("youtube_videos.id IN (SELECT DISTINCT audio_id FROM listening_progress WHERE user_id = ? AND (progress_percent >= 95 OR completed = 1))", userID)
+	}
+
+	// Lọc theo người tải lên cụ thể (Hỗ trợ URL /library?userId=123 hoặc status=user_123)
+	filterUserIDStr := strings.TrimSpace(c.Query("userId"))
+	if filterUserIDStr == "" {
+		filterUserIDStr = strings.TrimSpace(c.Query("createdBy"))
+	}
+	if strings.HasPrefix(status, "user_") {
+		filterUserIDStr = strings.TrimPrefix(status, "user_")
+	}
+
+	if filterUserIDStr != "" {
+		if targetUID, err := strconv.ParseUint(filterUserIDStr, 10, 32); err == nil && targetUID > 0 {
+			query = query.Where("youtube_videos.created_by = ?", targetUID)
+		}
 	} else if (status == "my" || c.Query("my") == "true") && userID > 0 {
 		query = query.Where("youtube_videos.created_by = ?", userID)
 	}
@@ -248,14 +266,16 @@ func (h *Handler) GetAudioByID(c *gin.Context) {
 		currentUser = domain.User{Role: domain.RoleGuest, IsGuest: true, Membership: domain.MembershipFree}
 	}
 
+	// Lấy danh sách episodes
+	var episodes []domain.Episode
+	h.db.Where("audio_id = ?", audio.ID).Order("episode_number ASC").Find(&episodes)
+	audio.TotalEpisodes = len(episodes)
+	audio.Episodes = episodes
+
 	if can, msg := logic.CanAccessAudio(currentUser, audio); !can {
 		response.Forbidden(c, msg)
 		return
 	}
-
-	// Lấy danh sách episodes
-	var episodes []domain.Episode
-	h.db.Where("audio_id = ?", audio.ID).Order("episode_number ASC").Find(&episodes)
 
 	// Lấy danh sách progress của user cho các episodes này
 	var progresses []domain.ListeningProgress
@@ -266,12 +286,30 @@ func (h *Handler) GetAudioByID(c *gin.Context) {
 		return p.EpisodeID
 	})
 
-	// Gắn progress vào từng episode
+	// Gắn progress và trạng thái VIP/Khóa vào từng episode
+	isVipOrAdmin := currentUser.Role == domain.RoleAdmin || currentUser.Role == domain.RoleVIP || currentUser.Membership == domain.MembershipVIP
 	for i := range episodes {
 		if p, found := progressByEp[episodes[i].ID]; found {
 			episodes[i].Completed = p.Completed
 			episodes[i].ProgressPercent = p.ProgressPercent
 			episodes[i].PositionSeconds = p.PositionSeconds
+		}
+		if audio.IsVIPOnly {
+			episodes[i].IsVIP = true
+		}
+		// Khóa logic: nếu truyện chỉ có 1 tập -> khóa toàn bộ; nếu có nhiều tập -> khóa từ tập 2 trở đi
+		if audio.IsVIPOnly || episodes[i].IsVIP {
+			if !isVipOrAdmin {
+				if len(episodes) <= 1 || episodes[i].EpisodeNumber > 1 {
+					episodes[i].IsLocked = true
+				} else {
+					episodes[i].IsLocked = false
+				}
+			} else {
+				episodes[i].IsLocked = false
+			}
+		} else {
+			episodes[i].IsLocked = false
 		}
 	}
 	audio.Episodes = episodes
@@ -307,16 +345,69 @@ func (h *Handler) GetAudioByID(c *gin.Context) {
 	response.OK(c, audio, nil)
 }
 
+func (h *Handler) GetImportQuota(c *gin.Context) {
+	userID := middleware.GetCurrentUserID(c)
+	if userID == 0 {
+		response.OK(c, gin.H{
+			"isGuest":          true,
+			"isVipOrAdmin":     false,
+			"todayImportCount": 0,
+			"maxImportsPerDay": logic.MaxFreeImportsPerDay,
+			"remaining":        0,
+			"canImport":        false,
+			"reason":           "Khách vãng lai không thể nhập link. Vui lòng đăng nhập hoặc nâng cấp tài khoản.",
+		}, nil)
+		return
+	}
+
+	var currentUser domain.User
+	if err := h.db.First(&currentUser, userID).Error; err != nil {
+		response.NotFound(c, "Người dùng không tồn tại")
+		return
+	}
+
+	isVipOrAdmin := currentUser.Role == domain.RoleAdmin || currentUser.Role == domain.RoleVIP || currentUser.Membership == domain.MembershipVIP
+
+	now := time.Now()
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	var todayCount int64
+	h.db.Model(&domain.Audio{}).
+		Where("created_by = ? AND created_at >= ?", currentUser.ID, startOfDay).
+		Count(&todayCount)
+
+	canImport, reason := logic.CanImportYouTube(currentUser, int(todayCount))
+
+	remaining := logic.MaxFreeImportsPerDay - int(todayCount)
+	if remaining < 0 {
+		remaining = 0
+	}
+	if isVipOrAdmin {
+		remaining = 999999
+	}
+
+	response.OK(c, gin.H{
+		"isGuest":          false,
+		"isVipOrAdmin":     isVipOrAdmin,
+		"todayImportCount": todayCount,
+		"maxImportsPerDay": logic.MaxFreeImportsPerDay,
+		"remaining":        remaining,
+		"canImport":        canImport,
+		"reason":           reason,
+	}, nil)
+}
+
 func (h *Handler) ImportYouTube(c *gin.Context) {
 	userID := middleware.GetCurrentUserID(c)
 	var currentUser domain.User
 	h.db.First(&currentUser, userID)
 
-	// 1. Kiểm tra chính sách hạn mức ngày theo user_id và mốc 00:00 UTC của ngày hôm nay
-	startOfToday := time.Now().UTC().Truncate(24 * time.Hour)
+	// 1. Kiểm tra chính sách hạn mức ngày theo user_id và mốc 00:00 của ngày hôm nay
+	now := time.Now()
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var todayCount int64
 	h.db.Model(&domain.Audio{}).
-		Where("created_by = ? AND created_at >= ?", currentUser.ID, startOfToday).
+		Where("created_by = ? AND created_at >= ?", currentUser.ID, startOfDay).
 		Count(&todayCount)
 
 	if can, msg := logic.CanImportYouTube(currentUser, int(todayCount)); !can {
@@ -377,6 +468,7 @@ func (h *Handler) ImportYouTube(c *gin.Context) {
 			TotalDurationSeconds: duration,
 			CategoryID:           req.CategoryID,
 			Status:               domain.StatusActive,
+			IsVIPOnly:            req.IsVIPOnly,
 			CreatedBy:            currentUser.ID, // Ghi nhận ID người nhập
 		}
 
@@ -398,6 +490,7 @@ func (h *Handler) ImportYouTube(c *gin.Context) {
 				StartSeconds:    draft.StartSeconds,
 				EndSeconds:      draft.EndSeconds,
 				DurationSeconds: draft.DurationSeconds,
+				IsVIP:           req.IsVIPOnly,
 			}
 			if err := tx.Create(&ep).Error; err != nil {
 				return err
@@ -435,6 +528,18 @@ func (h *Handler) ImportYouTube(c *gin.Context) {
 	h.db.Preload("Category").Preload("Tags").Preload("Episodes").First(&newAudio, newAudio.ID)
 	newAudio.TotalEpisodes = len(newAudio.Episodes)
 	newAudio.FormattedDuration = logic.FormatDuration(newAudio.TotalDurationSeconds)
+
+	// Gửi thông báo an toàn về audio mới vào Notification Center (tự lọc trùng và kiểm tra cài đặt)
+	newNotif := domain.Notification{
+		UserID:    currentUser.ID,
+		Title:     "Audio mới sẵn sàng: " + newAudio.Title,
+		Message:   fmt.Sprintf("Audio '%s' (%s, %d tập) đã được xử lý và thêm vào danh mục.", newAudio.Title, newAudio.FormattedDuration, newAudio.TotalEpisodes),
+		Type:      "NEW_EPISODE",
+		Link:      fmt.Sprintf("#/player?audioId=%d", newAudio.ID),
+		IsRead:    false,
+		CreatedAt: time.Now().UTC(),
+	}
+	notification.CreateSafeNotification(h.db, newNotif)
 
 	response.Created(c, gin.H{
 		"audio":     newAudio,
@@ -483,6 +588,8 @@ func (h *Handler) UpdateAudio(c *gin.Context) {
 	}
 	if req.IsVIPOnly != nil {
 		updates["is_vip_only"] = *req.IsVIPOnly
+		// Đồng bộ trạng thái VIP vào toàn bộ các tập của audio
+		_ = h.db.Model(&domain.Episode{}).Where("audio_id = ?", audio.ID).Update("is_vip", *req.IsVIPOnly)
 	}
 
 	if err := h.db.Model(&audio).Updates(updates).Error; err != nil {

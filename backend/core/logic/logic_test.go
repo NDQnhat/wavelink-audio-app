@@ -193,6 +193,44 @@ func TestPolicyEngine(t *testing.T) {
 	if !can {
 		t.Fatal("Admin should have unlimited imports")
 	}
+
+	// Test CanAccessEpisode (Episode 1 preview allowed for free user, Episode 2+ locked unless VIP)
+	vipAudio := domain.Audio{IsVIPOnly: true}
+	freeAudio := domain.Audio{IsVIPOnly: false}
+	ep1 := domain.Episode{EpisodeNumber: 1}
+	ep2 := domain.Episode{EpisodeNumber: 2}
+
+	// Normal audio: all episodes allowed
+	canEp, _ := logic.CanAccessEpisode(freeUser, freeAudio, ep1)
+	if !canEp {
+		t.Fatal("Free audio ep 1 should be accessible")
+	}
+	canEp, _ = logic.CanAccessEpisode(freeUser, freeAudio, ep2)
+	if !canEp {
+		t.Fatal("Free audio ep 2 should be accessible")
+	}
+
+	// VIP audio: Ep 1 preview allowed for free user
+	canEp, _ = logic.CanAccessEpisode(freeUser, vipAudio, ep1)
+	if !canEp {
+		t.Fatal("VIP audio ep 1 preview should be accessible for free user")
+	}
+
+	// VIP audio: Ep 2 locked for free user
+	canEp, _ = logic.CanAccessEpisode(freeUser, vipAudio, ep2)
+	if canEp {
+		t.Fatal("VIP audio ep 2 should be locked for free user")
+	}
+
+	// VIP audio: Ep 2 allowed for VIP user and Admin
+	canEp, _ = logic.CanAccessEpisode(vipUser, vipAudio, ep2)
+	if !canEp {
+		t.Fatal("VIP audio ep 2 should be accessible for VIP user")
+	}
+	canEp, _ = logic.CanAccessEpisode(admin, vipAudio, ep2)
+	if !canEp {
+		t.Fatal("VIP audio ep 2 should be accessible for Admin")
+	}
 }
 
 func TestDurationParsingAndFormatting(t *testing.T) {

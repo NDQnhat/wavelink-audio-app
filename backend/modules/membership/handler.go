@@ -2,12 +2,15 @@ package membership
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"net/url"
 	"time"
 
+	"audio-app-backend/config"
 	"audio-app-backend/core/domain"
+	"audio-app-backend/modules/notification"
 	"audio-app-backend/server/middleware"
 	"audio-app-backend/server/response"
 
@@ -16,33 +19,103 @@ import (
 )
 
 type Handler struct {
-	db *gorm.DB
+	db  *gorm.DB
+	cfg *config.Config
 }
 
-func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{db: db}
+func NewHandler(db *gorm.DB, cfg *config.Config) *Handler {
+	return &Handler{db: db, cfg: cfg}
 }
 
 type VIPPackage struct {
 	ID           string   `json:"id"`
 	Name         string   `json:"name"`
 	Amount       int      `json:"amount"`
+	PriceVND     int      `json:"priceVND"`
 	DurationDays int      `json:"durationDays"`
 	OriginalCost int      `json:"originalCost"`
 	Discount     string   `json:"discount"`
 	Description  string   `json:"description"`
 	Perks        []string `json:"perks"`
+	IsLocked     bool     `json:"isLocked,omitempty"`
+	IsCurrent    bool     `json:"isCurrent,omitempty"`
+	CanUpgrade   bool     `json:"canUpgrade,omitempty"`
+}
+
+type PaymentInfo struct {
+	BankName      string `json:"bankName"`
+	AccountNumber string `json:"accountNumber"`
+	AccountName   string `json:"accountName"`
+	NotePrefix    string `json:"notePrefix"`
+}
+
+func (h *Handler) GetSettingValue(key string) string {
+	var s domain.SystemSetting
+	if err := h.db.Session(&gorm.Session{}).Where("`key` = ?", key).Take(&s).Error; err == nil {
+		return s.Value
+	}
+	return ""
+}
+
+func (h *Handler) GetPaymentSettings() PaymentInfo {
+	info := PaymentInfo{
+		BankName:      "MB Bank (Quân Đội)",
+		AccountNumber: "0987654321",
+		AccountName:   "COMIC AUDIO HUB",
+		NotePrefix:    "VIP",
+	}
+
+	if h.cfg != nil {
+		if h.cfg.VietQRBankName != "" {
+			info.BankName = h.cfg.VietQRBankName
+		}
+		if h.cfg.VietQRAccountNumber != "" {
+			info.AccountNumber = h.cfg.VietQRAccountNumber
+		}
+		if h.cfg.VietQRAccountName != "" {
+			info.AccountName = h.cfg.VietQRAccountName
+		}
+		if h.cfg.VietQRNotePrefix != "" {
+			info.NotePrefix = h.cfg.VietQRNotePrefix
+		}
+	}
+
+	if val := h.GetSettingValue("bank_name"); val != "" {
+		info.BankName = val
+	}
+	if val := h.GetSettingValue("account_number"); val != "" {
+		info.AccountNumber = val
+	}
+	if val := h.GetSettingValue("account_name"); val != "" {
+		info.AccountName = val
+	}
+	if val := h.GetSettingValue("note_prefix"); val != "" {
+		info.NotePrefix = val
+	}
+
+	return info
+}
+
+func (h *Handler) GetDynamicPackages() []VIPPackage {
+	if val := h.GetSettingValue("vip_packages"); val != "" {
+		var pkgs []VIPPackage
+		if err := json.Unmarshal([]byte(val), &pkgs); err == nil && len(pkgs) > 0 {
+			return pkgs
+		}
+	}
+	return AvailablePackages
 }
 
 var AvailablePackages = []VIPPackage{
 	{
-		ID:           "1_MONTH",
-		Name:         "Gói VIP 1 Tháng",
+		ID:           "VIP_1M",
+		Name:         "Gói 1 Tháng",
 		Amount:       49000,
+		PriceVND:     49000,
 		DurationDays: 30,
 		OriginalCost: 59000,
 		Discount:     "Tiết kiệm 17%",
-		Description:  "Trải nghiệm đầy đủ đặc quyền VIP trong 30 ngày",
+		Description:  "Trải nghiệm toàn bộ kho truyện VIP & không giới hạn import",
 		Perks: []string{
 			"Mở khóa 100% truyện độc quyền VIP",
 			"Không giới hạn số lượt import YouTube",
@@ -51,13 +124,14 @@ var AvailablePackages = []VIPPackage{
 		},
 	},
 	{
-		ID:           "3_MONTHS",
-		Name:         "Gói VIP 3 Tháng",
+		ID:           "VIP_3M",
+		Name:         "Gói 3 Tháng",
 		Amount:       129000,
+		PriceVND:     129000,
 		DurationDays: 90,
 		OriginalCost: 177000,
 		Discount:     "Tiết kiệm 27% (Khuyên dùng)",
-		Description:  "Gói cày truyện phổ biến nhất dành cho độc giả chân chính",
+		Description:  "Tiết kiệm 15% - Đồng bộ tốc độ cao",
 		Perks: []string{
 			"Mọi đặc quyền của gói VIP 1 Tháng",
 			"Thời lượng kéo dài 90 ngày liên tục",
@@ -66,13 +140,14 @@ var AvailablePackages = []VIPPackage{
 		},
 	},
 	{
-		ID:           "12_MONTHS",
-		Name:         "Gói VIP 1 Năm (Trọn Bộ)",
+		ID:           "VIP_1Y",
+		Name:         "Gói 1 Năm",
 		Amount:       399000,
+		PriceVND:     399000,
 		DurationDays: 365,
 		OriginalCost: 708000,
 		Discount:     "Tiết kiệm 44% (Siêu rẻ)",
-		Description:  "1 năm cày truyện không giới hạn, trọn vẹn mọi tác phẩm",
+		Description:  "Tiết kiệm 35% - Đặc quyền tối cao",
 		Perks: []string{
 			"Toàn bộ đặc quyền cao cấp nhất của hệ thống",
 			"365 ngày VIP không lo gia hạn",
@@ -110,6 +185,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	mem := rg.Group("/membership")
 	{
 		mem.GET("/packages", h.GetPackages)
+		mem.GET("/payment-info", h.GetPaymentInfo)
 		mem.GET("/me", middleware.RequireAuth(), h.GetMyMembership)
 		mem.POST("/orders", middleware.RequireAuth(), h.CreateOrder)
 		mem.GET("/orders/:orderCode", middleware.RequireAuth(), h.GetOrder)
@@ -117,10 +193,116 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		mem.POST("/cancel-vip", middleware.RequireAuth(), h.CancelVIP)
 		mem.POST("/refund", middleware.RequireAuth(), h.RequestRefund)
 		mem.POST("/complaint", middleware.RequireAuth(), h.SubmitComplaint)
+
+		// Admin Routes
+		admin := mem.Group("/admin")
+		admin.Use(middleware.RequireAuth(), middleware.RequireAdmin())
+		{
+			admin.PUT("/payment-info", h.AdminUpdatePaymentInfo)
+			admin.PUT("/packages", h.AdminUpdatePackages)
+			admin.POST("/packages/reset", h.AdminResetPackages)
+		}
 	}
 }
 
 func (h *Handler) GetPackages(c *gin.Context) {
+	pkgs := h.GetDynamicPackages()
+	userID := middleware.GetCurrentUserID(c)
+
+	if userID > 0 {
+		var u domain.User
+		if err := h.db.First(&u, userID).Error; err == nil {
+			isVip := u.Role == domain.RoleVIP || u.Membership == domain.MembershipVIP || (u.VipExpiresAt != nil && u.VipExpiresAt.After(time.Now().UTC()))
+			if isVip {
+				var latestPaid domain.MembershipOrder
+				h.db.Where("user_id = ? AND status = 'PAID'", userID).Order("paid_at DESC, created_at DESC").First(&latestPaid)
+				currentDays := latestPaid.DurationDays
+				if currentDays == 0 {
+					currentDays = 30
+				}
+
+				for i := range pkgs {
+					if pkgs[i].DurationDays <= currentDays {
+						pkgs[i].IsLocked = true
+						if pkgs[i].DurationDays == currentDays || pkgs[i].ID == latestPaid.PackageID {
+							pkgs[i].IsCurrent = true
+						}
+					} else {
+						pkgs[i].IsLocked = false
+						pkgs[i].CanUpgrade = true
+					}
+				}
+			}
+		}
+	}
+
+	response.OK(c, pkgs, nil)
+}
+
+func (h *Handler) GetPaymentInfo(c *gin.Context) {
+	info := h.GetPaymentSettings()
+	response.OK(c, info, nil)
+}
+
+func (h *Handler) AdminUpdatePaymentInfo(c *gin.Context) {
+	var req struct {
+		BankName      string `json:"bankName" binding:"required"`
+		AccountNumber string `json:"accountNumber" binding:"required"`
+		AccountName   string `json:"accountName" binding:"required"`
+		NotePrefix    string `json:"notePrefix"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Vui lòng nhập đầy đủ thông tin: "+err.Error())
+		return
+	}
+
+	now := time.Now().UTC()
+	items := map[string]string{
+		"bank_name":      req.BankName,
+		"account_number": req.AccountNumber,
+		"account_name":   req.AccountName,
+		"note_prefix":    req.NotePrefix,
+	}
+	for k, v := range items {
+		var s domain.SystemSetting
+		if err := h.db.Session(&gorm.Session{}).Where("`key` = ?", k).Take(&s).Error; err == nil {
+			h.db.Model(&domain.SystemSetting{}).Where("`key` = ?", k).Updates(map[string]interface{}{"value": v, "updated_at": now})
+		} else {
+			h.db.Create(&domain.SystemSetting{Key: k, Value: v, UpdatedAt: now})
+		}
+	}
+
+	response.OK(c, req, nil)
+}
+
+func (h *Handler) AdminUpdatePackages(c *gin.Context) {
+	var req struct {
+		Packages []VIPPackage `json:"packages" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Dữ liệu gói không hợp lệ: "+err.Error())
+		return
+	}
+
+	now := time.Now().UTC()
+	bytes, err := json.Marshal(req.Packages)
+	if err != nil {
+		response.BadRequest(c, "Không thể mã hóa dữ liệu: "+err.Error())
+		return
+	}
+
+	var s domain.SystemSetting
+	if err := h.db.Session(&gorm.Session{}).Where("`key` = ?", "vip_packages").Take(&s).Error; err == nil {
+		h.db.Model(&domain.SystemSetting{}).Where("`key` = ?", "vip_packages").Updates(map[string]interface{}{"value": string(bytes), "updated_at": now})
+	} else {
+		h.db.Create(&domain.SystemSetting{Key: "vip_packages", Value: string(bytes), UpdatedAt: now})
+	}
+
+	response.OK(c, req.Packages, nil)
+}
+
+func (h *Handler) AdminResetPackages(c *gin.Context) {
+	h.db.Where("`key` = ?", "vip_packages").Delete(&domain.SystemSetting{})
 	response.OK(c, AvailablePackages, nil)
 }
 
@@ -169,10 +351,15 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 		return
 	}
 
+	pkgs := h.GetDynamicPackages()
 	var pkg *VIPPackage
-	for _, p := range AvailablePackages {
-		if p.ID == req.PackageID {
-			pkg = &p
+	for _, p := range pkgs {
+		if p.ID == req.PackageID ||
+			(p.ID == "VIP_1M" && req.PackageID == "1_MONTH") ||
+			(p.ID == "VIP_3M" && req.PackageID == "3_MONTHS") ||
+			(p.ID == "VIP_1Y" && req.PackageID == "12_MONTHS") {
+			copyP := p
+			pkg = &copyP
 			break
 		}
 	}
@@ -181,14 +368,38 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 		return
 	}
 
+	// Giới hạn gói/user: Nếu user đã đăng ký gói và VIP vẫn còn hạn, khóa gói hiện tại và các gói thấp hơn
+	var u domain.User
+	if err := h.db.First(&u, userID).Error; err == nil {
+		isVip := (u.Role == domain.RoleVIP || u.Membership == domain.MembershipVIP) && u.VipExpiresAt != nil && u.VipExpiresAt.After(time.Now().UTC())
+		if isVip {
+			var latestPaid domain.MembershipOrder
+			h.db.Where("user_id = ? AND status = 'PAID'", userID).Order("paid_at DESC, created_at DESC").First(&latestPaid)
+			currentDays := latestPaid.DurationDays
+			if currentDays == 0 {
+				currentDays = 30
+			}
+			if pkg.DurationDays <= currentDays {
+				response.BadRequest(c, "Bạn đã đăng ký gói này và gói hiện đang bị khóa. Vui lòng chọn nâng cấp lên các gói cao hơn để cộng dồn thời hạn VIP!")
+				return
+			}
+		}
+	}
+
+	payInfo := h.GetPaymentSettings()
+
 	// Sinh mã đơn hàng ngẫu nhiên an toàn: VIP-UID-RANDOM
 	n, _ := rand.Int(rand.Reader, big.NewInt(900000))
 	randCode := n.Int64() + 100000
-	orderCode := fmt.Sprintf("VIP-%d-%d", userID, randCode)
+	notePrefix := payInfo.NotePrefix
+	if notePrefix == "" {
+		notePrefix = "VIP"
+	}
+	orderCode := fmt.Sprintf("%s-%d-%d", notePrefix, userID, randCode)
 
-	// Tạo URL QR Code mô phỏng thanh toán (Chuẩn VietQR Demo)
+	// Tạo URL QR Code mô phỏng thanh toán VietQR
 	qrDescription := url.QueryEscape(fmt.Sprintf("Thanh toan don %s", orderCode))
-	qrURL := fmt.Sprintf("https://img.vietqr.io/image/970422-0987654321-compact2.png?amount=%d&addInfo=%s&accountName=COMIC%%20AUDIO%%20HUB", pkg.Amount, qrDescription)
+	qrURL := fmt.Sprintf("https://img.vietqr.io/image/970422-%s-compact2.png?amount=%d&addInfo=%s&accountName=%s", payInfo.AccountNumber, pkg.Amount, qrDescription, url.QueryEscape(payInfo.AccountName))
 
 	order := domain.MembershipOrder{
 		OrderCode:    orderCode,
@@ -208,7 +419,26 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	response.Created(c, order)
+	orderData := gin.H{
+		"id":              order.ID,
+		"orderCode":       order.OrderCode,
+		"userId":          order.UserID,
+		"packageId":       order.PackageID,
+		"packageName":     order.PackageName,
+		"amount":          order.Amount,
+		"priceVND":        order.Amount,
+		"durationDays":    order.DurationDays,
+		"status":          order.Status,
+		"qrCodeUrl":       order.QRCodeURL,
+		"bankName":        payInfo.BankName,
+		"accountNumber":   payInfo.AccountNumber,
+		"accountName":     payInfo.AccountName,
+		"transferContent": order.OrderCode,
+		"expiresAt":       order.ExpiresAt,
+		"createdAt":       order.CreatedAt,
+	}
+
+	response.Created(c, orderData)
 }
 
 func (h *Handler) GetOrder(c *gin.Context) {
@@ -227,7 +457,27 @@ func (h *Handler) GetOrder(c *gin.Context) {
 		order.Status = "EXPIRED"
 	}
 
-	response.OK(c, order, nil)
+	payInfo := h.GetPaymentSettings()
+	orderData := gin.H{
+		"id":              order.ID,
+		"orderCode":       order.OrderCode,
+		"userId":          order.UserID,
+		"packageId":       order.PackageID,
+		"packageName":     order.PackageName,
+		"amount":          order.Amount,
+		"priceVND":        order.Amount,
+		"durationDays":    order.DurationDays,
+		"status":          order.Status,
+		"qrCodeUrl":       order.QRCodeURL,
+		"bankName":        payInfo.BankName,
+		"accountNumber":   payInfo.AccountNumber,
+		"accountName":     payInfo.AccountName,
+		"transferContent": order.OrderCode,
+		"expiresAt":       order.ExpiresAt,
+		"createdAt":       order.CreatedAt,
+	}
+
+	response.OK(c, orderData, nil)
 }
 
 func (h *Handler) SimulatePayment(c *gin.Context) {
@@ -386,7 +636,7 @@ func (h *Handler) CancelVIP(c *gin.Context) {
 		IsRead:    false,
 		CreatedAt: now,
 	}
-	h.db.Create(&notif)
+	notification.CreateSafeNotification(h.db, notif)
 
 	response.OK(c, gin.H{"message": "Đã hủy gói VIP thành công", "user": u}, nil)
 }
@@ -409,7 +659,7 @@ func (h *Handler) RequestRefund(c *gin.Context) {
 		IsRead:    false,
 		CreatedAt: now,
 	}
-	h.db.Create(&notif)
+	notification.CreateSafeNotification(h.db, notif)
 
 	response.OK(c, gin.H{
 		"message":   "Yêu cầu hoàn tiền đã được ghi nhận thành công! Ban quản trị sẽ liên hệ và xử lý trong 24h.",
@@ -440,7 +690,7 @@ func (h *Handler) SubmitComplaint(c *gin.Context) {
 		IsRead:    false,
 		CreatedAt: now,
 	}
-	h.db.Create(&notif)
+	notification.CreateSafeNotification(h.db, notif)
 
 	response.OK(c, gin.H{
 		"message":  "Khiếu nại/Góp ý của bạn đã được gửi thành công! Cảm ơn bạn đã đóng góp cho WaveLink.",

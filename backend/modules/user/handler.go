@@ -1,6 +1,8 @@
 package user
 
 import (
+	"math"
+	"strconv"
 	"time"
 
 	"audio-app-backend/core/domain"
@@ -44,6 +46,9 @@ type UpdateRoleRequest struct {
 }
 
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
+	// Public user profile route
+	rg.GET("/users/:id", h.GetUserProfile)
+
 	users := rg.Group("/users")
 	users.Use(middleware.RequireAuth())
 	{
@@ -54,6 +59,77 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 		users.PUT("/:id", middleware.RequireAdmin(), h.UpdateUserRole)
 		users.DELETE("/:id", middleware.RequireAdmin(), h.DeleteUser)
 	}
+}
+
+// GetUserProfile trả về thông tin hồ sơ theo ID người dùng
+func (h *Handler) GetUserProfile(c *gin.Context) {
+	idStr := c.Param("id")
+	targetID, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil || targetID == 0 {
+		response.BadRequest(c, "ID người dùng không hợp lệ")
+		return
+	}
+
+	var u domain.User
+	if err := h.db.First(&u, targetID).Error; err != nil {
+		response.NotFound(c, "Không tìm thấy người dùng")
+		return
+	}
+
+	currentUserID := middleware.GetCurrentUserID(c)
+	isOwnerOrAdmin := (currentUserID > 0 && currentUserID == u.ID) || middleware.GetCurrentUserRole(c) == domain.RoleAdmin
+
+	// Tính tổng giờ nghe từ listening_history
+	var sumRes struct {
+		TotalSec int64
+	}
+	h.db.Model(&domain.ListeningHistory{}).
+		Select("COALESCE(SUM(duration_listened), 0) as total_sec").
+		Where("user_id = ?", u.ID).
+		Scan(&sumRes)
+	hours := math.Round((float64(sumRes.TotalSec)/3600.0)*10) / 10
+
+	// Đếm số audio do user này tải lên
+	var uploadCount int64
+	h.db.Model(&domain.Audio{}).Where("created_by = ?", u.ID).Count(&uploadCount)
+
+	vipBadge := "Độc Giả Thân Thiết"
+	if u.Role == domain.RoleAdmin {
+		vipBadge = "ADMIN Sáng Lập"
+	} else if u.Role == domain.RoleVIP || u.Membership == domain.MembershipVIP {
+		vipBadge = "VIP Hoàng Kim"
+		if u.VipExpiresAt != nil {
+			daysLeft := int(time.Until(*u.VipExpiresAt).Hours() / 24)
+			if daysLeft >= 180 {
+				vipBadge = "VIP Kim Cương"
+			} else if daysLeft >= 60 {
+				vipBadge = "VIP 1 Năm"
+			} else if daysLeft >= 25 {
+				vipBadge = "VIP 6 Tháng"
+			}
+		}
+	}
+
+	profileData := gin.H{
+		"id":          u.ID,
+		"username":    u.Username,
+		"avatarUrl":   u.AvatarURL,
+		"coverUrl":    u.CoverURL,
+		"role":        u.Role,
+		"membership":  u.Membership,
+		"vipBadge":    vipBadge,
+		"totalHours":  hours,
+		"uploadCount": uploadCount,
+		"createdAt":   u.CreatedAt,
+		"isOwner":     isOwnerOrAdmin,
+	}
+
+	if isOwnerOrAdmin {
+		profileData["email"] = u.Email
+		profileData["vipExpiresAt"] = u.VipExpiresAt
+	}
+
+	response.OK(c, profileData, nil)
 }
 
 func (h *Handler) GetUsers(c *gin.Context) {

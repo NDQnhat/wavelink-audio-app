@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCategories } from '@/hooks/useCategories';
-import { useImportYouTube } from '@/hooks/useAudio';
+import { useImportYouTube, useImportQuota } from '@/hooks/useAudio';
 import { useAuthStore } from '@/stores/authStore';
 import { usePlayerStore } from '@/stores/playerStore';
 import { api } from '@/services/api';
@@ -15,6 +15,7 @@ export const UploadPage: React.FC = () => {
   const { user, isLive } = useAuthStore();
   const { data: categories = [] } = useCategories();
   const importMutation = useImportYouTube();
+  const { data: importQuota } = useImportQuota();
 
   const [url, setUrl] = useState('');
   const [categoryId, setCategoryId] = useState<number>(1);
@@ -102,8 +103,20 @@ export const UploadPage: React.FC = () => {
   const computedEpisodes = computeLogicalEpisodes(calculatedTotalSec, blockSize);
   const calculatedEpisodeCount = computedEpisodes.length;
 
+  const isQuotaExceeded = !isVipOrAdmin && !user?.isGuest && Boolean(importQuota && importQuota.canImport === false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (user?.isGuest) {
+      toast.error('Khách vãng lai chưa thể nhập link. Vui lòng đăng nhập hoặc tạo tài khoản!');
+      navigate('/login');
+      return;
+    }
+    if (isQuotaExceeded) {
+      toast.error('Bạn đã dùng hết hạn mức 5 lượt import hôm nay. Vui lòng nâng cấp VIP để tiếp tục không giới hạn!');
+      navigate('/membership');
+      return;
+    }
     if (!url.trim()) {
       toast.error('Vui lòng nhập liên kết YouTube');
       return;
@@ -163,13 +176,26 @@ export const UploadPage: React.FC = () => {
             <i className="ri-dashboard-3-line text-lg" />
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] font-extrabold uppercase text-gray-500">Hạn mức của bạn ({userRole})</span>
+            <span className="text-[10px] font-extrabold uppercase text-gray-500">
+              {user?.isGuest ? 'Quyền hạn: Khách vãng lai' : `Hạn mức của bạn (${userRole})`}
+            </span>
             <span className="text-xs font-bold text-black">
-              {isVipOrAdmin ? '⚡ Không giới hạn lượt import' : '⚠️ Miễn phí: 5 video / ngày'}
+              {user?.isGuest
+                ? '⚠️ Khách chưa thể nhập link'
+                : isVipOrAdmin
+                ? '⚡ Không giới hạn lượt import'
+                : `⚠️ Miễn phí: Đã dùng ${importQuota?.todayImportCount ?? 0}/5 hôm nay (còn ${importQuota?.remaining ?? 5} lượt)`}
             </span>
           </div>
         </div>
-        {!isVipOrAdmin ? (
+        {user?.isGuest ? (
+          <button
+            onClick={() => navigate('/login')}
+            className="btn-comic btn-comic-primary text-[10px] py-1 px-2.5 font-bold"
+          >
+            <i className="ri-login-box-line font-bold" /> Đăng Nhập
+          </button>
+        ) : !isVipOrAdmin ? (
           <button
             onClick={() => navigate('/membership')}
             className="btn-comic btn-comic-purple text-[10px] py-1 px-2.5"
@@ -180,6 +206,25 @@ export const UploadPage: React.FC = () => {
           <span className="badge-comic badge-comic-teal text-[9px]">UNLIMITED</span>
         )}
       </div>
+
+      {/* Quota Exceeded Warning Banner */}
+      {isQuotaExceeded && (
+        <div className="card-comic-sm p-3 bg-red-50 border-2 border-red-500 flex items-center justify-between gap-2 shadow-comic-sm">
+          <div className="flex items-center gap-2">
+            <i className="ri-error-warning-fill text-red-500 text-lg shrink-0" />
+            <span className="text-xs font-bold text-red-700 leading-tight">
+              Bạn đã dùng hết hạn mức 5 lượt import hôm nay. Vui lòng nâng cấp VIP để tiếp tục không giới hạn!
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/membership')}
+            className="btn-comic btn-comic-purple text-[10px] py-1 px-2.5 shrink-0"
+          >
+            <i className="ri-vip-crown-fill" /> Lên VIP Ngay
+          </button>
+        </div>
+      )}
 
       {/* 3. Form Nhập Nguồn */}
       <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
@@ -263,7 +308,7 @@ export const UploadPage: React.FC = () => {
           <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between">
               <label className="font-extrabold text-xs uppercase text-black" htmlFor="yt-duration-input">
-                Thời Lượng Video (Tự động nhận diện từ YouTube)
+                Thời Lượng Video 
               </label>
               <span className="text-[10px] font-bold text-gray-500">
                 {previewData?.formattedDuration ? (
@@ -283,9 +328,6 @@ export const UploadPage: React.FC = () => {
               onChange={(e) => setDurationInput(e.target.value)}
               className="input-comic text-xs font-mono font-bold"
             />
-            <span className="text-[10px] font-semibold text-gray-500">
-              Hệ thống tự động phát hiện thời lượng video thực tế để phân tập logic. Bạn có thể để trống hoặc chỉnh sửa nếu muốn.
-            </span>
           </div>
 
           <div className="flex flex-col gap-1 mt-1">
@@ -419,13 +461,20 @@ export const UploadPage: React.FC = () => {
         <button
           id="submit-import-btn"
           type="submit"
-          disabled={importMutation.isPending}
-          className="btn-comic btn-comic-primary text-sm py-3 px-4 font-black shadow-comic-md mt-1"
+          disabled={importMutation.isPending || isQuotaExceeded}
+          className={`btn-comic ${
+            isQuotaExceeded ? 'bg-gray-300 text-gray-600 border-2 border-gray-500 cursor-not-allowed shadow-none' : 'btn-comic-primary'
+          } text-sm py-3 px-4 font-black shadow-comic-md mt-1`}
         >
           {importMutation.isPending ? (
             <>
               <i className="ri-loader-4-line animate-spin text-lg" />
               <span>Đang xử lý phân tập...</span>
+            </>
+          ) : isQuotaExceeded ? (
+            <>
+              <i className="ri-lock-2-line text-lg" />
+              <span>Đã Hết Lượt Import Hôm Nay (5/5)</span>
             </>
           ) : (
             <>

@@ -10,6 +10,7 @@ export interface Episode {
   progressPercent?: number;
   positionSeconds?: number;
   isLocked?: boolean;
+  isVip?: boolean;
 }
 
 export interface AudioItem {
@@ -51,6 +52,8 @@ export interface AudioFilter {
   limit?: number;
   pageSize?: number;
   my?: boolean;
+  userId?: number | string;
+  createdBy?: number | string;
   sort?: string;
 }
 
@@ -75,4 +78,14 @@ export interface ImportYouTubePayload {
 export interface ImportResult {
   duplicate?: boolean;
   audio: AudioItem;
+}
+
+export interface ImportQuota {
+  isGuest: boolean;
+  isVipOrAdmin: boolean;
+  todayImportCount: number;
+  maxImportsPerDay: number;
+  remaining: number;
+  canImport: boolean;
+  reason?: string;
 }

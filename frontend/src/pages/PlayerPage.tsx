@@ -13,6 +13,7 @@ import { Pagination } from '@/components/ui/Pagination';
 import { DEFAULT_PAGE_SIZE } from '@/config/pagination';
 import { api } from '@/services/api';
 import { useQueryClient } from '@tanstack/react-query';
+import { ShareStoryModal } from '@/components/community/ShareStoryModal';
 
 export const PlayerPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -43,6 +44,7 @@ export const PlayerPage: React.FC = () => {
 
   const [isSpeedModalOpen, setIsSpeedModalOpen] = useState(false);
   const [isSleepModalOpen, setIsSleepModalOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [scrubPercent, setScrubPercent] = useState<number | null>(null);
   const [episodePage, setEpisodePage] = useState(1);
@@ -66,6 +68,18 @@ export const PlayerPage: React.FC = () => {
   }
 
   const isTargetAudioPlaying = currentAudio?.id === audio.id;
+  const isVipOrAdmin = user?.role === 'VIP' || user?.role === 'ADMIN' || user?.membership === 'VIP';
+  const isVipAudio = Boolean(audio.isVIPOnly || audio.isVipOnly);
+  const totalEpisodesCount = audio.totalEpisodes || audio.episodes?.length || 1;
+
+  const isEpLocked = (ep: { episodeNumber: number; isVip?: boolean; isLocked?: boolean }) => {
+    if (isVipOrAdmin) return false;
+    const isVip = isVipAudio || Boolean(ep.isVip);
+    if (!isVip) return false;
+    if (totalEpisodesCount <= 1) return true;
+    return ep.episodeNumber > 1;
+  };
+
   const activeEp =
     isTargetAudioPlaying && currentEpisode
       ? currentEpisode
@@ -89,6 +103,15 @@ export const PlayerPage: React.FC = () => {
   const currentPercent = scrubPercent !== null ? scrubPercent : rawPercent;
 
   const handleMasterPlay = () => {
+    if (isEpLocked(activeEp)) {
+      if (totalEpisodesCount <= 1) {
+        toast.error('Nội dung này độc quyền dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!');
+      } else {
+        toast.error('Tập 2 trở đi chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói để tiếp tục nghe!');
+      }
+      navigate('/membership');
+      return;
+    }
     if (isTargetAudioPlaying) {
       togglePlay();
     } else {
@@ -102,20 +125,22 @@ export const PlayerPage: React.FC = () => {
     const targetEp =
       audio.episodes?.find((e) => (epId && e.id === epId) || e.episodeNumber === epNum) ||
       audio.episodes?.[0];
-    play(audio, targetEp, audio.lastPositionSeconds || 0);
+    if (targetEp && isEpLocked(targetEp)) {
+      if (totalEpisodesCount <= 1) {
+        toast.error('Nội dung này độc quyền dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!');
+      } else {
+        toast.error('Tập cần nghe tiếp chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!');
+      }
+      navigate('/membership');
+      return;
+    }
+    if (targetEp) {
+      play(audio, targetEp, audio.lastPositionSeconds || 0);
+    }
   };
 
   const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: audio.title,
-        text: `Đang nghe truyện ${audio.title} trên WaveLink`,
-        url: window.location.href,
-      }).catch(() => {});
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      toast.success('Đã sao chép link truyện vào bộ nhớ tạm!');
-    }
+    setIsShareModalOpen(true);
   };
 
   const handleRefreshMetadata = async () => {
@@ -353,7 +378,19 @@ export const PlayerPage: React.FC = () => {
 
           {/* Next Episode */}
           <button
-            onClick={nextEpisode}
+            onClick={() => {
+              const eps = audio.episodes || [];
+              const currIdx = eps.findIndex((e) => e.id === activeEp.id);
+              if (currIdx !== -1 && currIdx + 1 < eps.length) {
+                const nextEp = eps[currIdx + 1];
+                if (isEpLocked(nextEp)) {
+                  toast.error('Tập tiếp theo chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!');
+                  navigate('/membership');
+                  return;
+                }
+              }
+              nextEpisode();
+            }}
             className="w-10 h-10 rounded-lg border-2 border-black bg-white flex items-center justify-center text-black shadow-comic-sm hover:bg-gray-100 active:translate-x-0.5 active:translate-y-0.5"
             title="Tập tiếp theo"
           >
@@ -399,19 +436,24 @@ export const PlayerPage: React.FC = () => {
             .map((ep) => {
               const isThisEpActive = isTargetAudioPlaying && currentEpisode?.id === ep.id;
               const isCompleted = ep.completed || (ep.progressPercent || 0) >= 95;
+              const epLocked = isEpLocked(ep);
+              const epIsVip = isVipAudio || Boolean(ep.isVip);
 
               return (
                 <div
                   key={ep.id}
                   onClick={() => {
-                    if (ep.isLocked) {
-                      toast.error('Tập này yêu cầu tài khoản VIP. Vui lòng nâng cấp!');
+                    if (epLocked) {
+                      toast.error('Tập 2 trở đi chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói để mở khóa toàn bộ!');
+                      navigate('/membership');
                       return;
                     }
                     play(audio, ep, ep.positionSeconds || 0);
                   }}
                   className={`card-comic-sm p-3 flex items-center justify-between gap-3 cursor-pointer transition-all ${
-                    isThisEpActive
+                    epLocked
+                      ? 'bg-purple-50/60 !border-purple-300 opacity-90 hover:bg-purple-50'
+                      : isThisEpActive
                       ? 'bg-[#FEF9C3] !border-2 !border-black shadow-comic'
                       : 'bg-white hover:bg-gray-50'
                   }`}
@@ -419,14 +461,18 @@ export const PlayerPage: React.FC = () => {
                   <div className="flex items-center gap-3 min-w-0">
                     <div
                       className={`w-9 h-9 rounded-lg border-2 border-black flex items-center justify-center shrink-0 shadow-comic-sm ${
-                        isThisEpActive
+                        epLocked
+                          ? 'bg-[#8338EC] text-white font-bold'
+                          : isThisEpActive
                           ? 'bg-[#FFE600] text-black font-black'
                           : isCompleted
                           ? 'bg-[#2A9D8F] text-white'
                           : 'bg-gray-100 text-black font-bold'
                       }`}
                     >
-                      {isThisEpActive ? (
+                      {epLocked ? (
+                        <i className="ri-lock-2-fill text-lg text-[#FFE600]" />
+                      ) : isThisEpActive ? (
                         <i className="ri-play-fill text-lg" />
                       ) : isCompleted ? (
                         <i className="ri-check-line text-lg font-black" />
@@ -435,9 +481,21 @@ export const PlayerPage: React.FC = () => {
                       )}
                     </div>
                     <div className="flex flex-col min-w-0">
-                      <span className="font-extrabold text-xs text-black truncate leading-tight">
-                        {ep.title}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-extrabold text-xs text-black truncate leading-tight">
+                          {ep.title}
+                        </span>
+                        {epIsVip && ep.episodeNumber === 1 && (
+                          <span className="badge-comic badge-comic-teal text-[8px] py-0 px-1 font-black shrink-0">
+                            <i className="ri-eye-line" /> XEM TRƯỚC TẬP 1
+                          </span>
+                        )}
+                        {epIsVip && ep.episodeNumber > 1 && (
+                          <span className="badge-comic badge-comic-purple text-[8px] py-0 px-1 font-black shrink-0">
+                            <i className="ri-vip-crown-fill text-[#FFE600]" /> VIP
+                          </span>
+                        )}
+                      </div>
                       <span className="font-mono text-[11px] text-gray-600 truncate mt-0.5">
                         {formatTime(ep.startSeconds)} - {formatTime(ep.endSeconds)} • {ep.progressPercent || 0}%
                       </span>
@@ -446,14 +504,26 @@ export const PlayerPage: React.FC = () => {
 
                   <span
                     className={`badge-comic ${
-                      isThisEpActive
+                      epLocked
+                        ? 'badge-comic-purple !bg-[#8338EC] text-white'
+                        : isThisEpActive
                         ? 'badge-comic-yellow'
                         : isCompleted
                         ? 'badge-comic-teal'
                         : 'badge-comic-white'
                     } text-[9px]`}
                   >
-                    {isThisEpActive ? 'ĐANG PHÁT' : isCompleted ? 'ĐÃ XONG' : 'CHƯA NGHE'}
+                    {epLocked ? (
+                      <span className="flex items-center gap-0.5">
+                        <i className="ri-lock-2-line" /> KHÓA VIP
+                      </span>
+                    ) : isThisEpActive ? (
+                      'ĐANG PHÁT'
+                    ) : isCompleted ? (
+                      'ĐÃ XONG'
+                    ) : (
+                      'CHƯA NGHE'
+                    )}
                   </span>
                 </div>
               );
@@ -570,6 +640,18 @@ export const PlayerPage: React.FC = () => {
           )}
         </div>
       </Modal>
+
+      {/* Share to Community Modal */}
+      <ShareStoryModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        audio={{
+          id: audio.id,
+          title: audio.title,
+          author: audio.author,
+          thumbnailUrl: audio.thumbnailUrl,
+        }}
+      />
     </div>
   );
 };

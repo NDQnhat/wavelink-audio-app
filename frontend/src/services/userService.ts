@@ -67,4 +67,16 @@ export const userService = {
     }
     return false;
   },
+
+  async getUserProfile(id: number | string): Promise<import('@/types').UserProfileData | null> {
+    try {
+      const res = await axiosClient.get<{ success: boolean; data: import('@/types').UserProfileData }>(`/users/${id}`);
+      if (res.data.success && res.data.data) {
+        return res.data.data;
+      }
+    } catch (err) {
+      console.warn(`getUserProfile(${id}) API error`, err);
+    }
+    return null;
+  },
 };

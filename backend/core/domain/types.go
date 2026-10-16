@@ -103,6 +103,7 @@ type Episode struct {
 	StartSeconds    int       `json:"startSeconds" gorm:"column:start_seconds;default:0;not null"`
 	EndSeconds      int       `json:"endSeconds" gorm:"column:end_seconds;not null"`
 	DurationSeconds int       `json:"duration" gorm:"column:duration_seconds;not null"`
+	IsVIP           bool      `json:"isVip" gorm:"column:is_vip;default:false"`
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
 
@@ -110,6 +111,7 @@ type Episode struct {
 	Completed       bool    `json:"completed" gorm:"-"`
 	ProgressPercent float64 `json:"progressPercent" gorm:"-"`
 	PositionSeconds int     `json:"positionSeconds" gorm:"-"`
+	IsLocked        bool    `json:"isLocked" gorm:"-"`
 }
 
 // ListeningProgress Entity (UPSERT 60s)
@@ -163,6 +165,9 @@ type NotificationPreference struct {
 	SystemAlerts    bool      `json:"systemAlerts" gorm:"default:true"`
 	NovelUpdates    bool      `json:"novelUpdates" gorm:"default:true"`
 	PromotionAlerts bool      `json:"promotionAlerts" gorm:"default:true"`
+	ExternalAudio   bool      `json:"externalAudio" gorm:"default:true"`
+	BlockAll        bool      `json:"blockAll" gorm:"default:false"`
+	WelcomeSeeded   bool      `json:"welcomeSeeded" gorm:"default:false"`
 	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
@@ -182,6 +187,54 @@ type MembershipOrder struct {
 	CreatedAt    time.Time  `json:"createdAt"`
 }
 
+// SystemSetting Entity for persistent runtime settings (Bank info, dynamic VIP packages)
+type SystemSetting struct {
+	Key       string    `json:"key" gorm:"primaryKey;column:key;size:100"`
+	Value     string    `json:"value" gorm:"column:value;type:text"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// CommunityMessage Entity for realtime chat & shared audio recommendations
+type CommunityMessage struct {
+	ID            uint      `json:"id" gorm:"primaryKey"`
+	UserID        uint      `json:"userId" gorm:"column:user_id;index;not null"`
+	Username      string    `json:"username" gorm:"size:100;not null"`
+	AvatarURL     string    `json:"avatarUrl" gorm:"size:500;column:avatar_url"`
+	IsVIP         bool      `json:"isVip" gorm:"column:is_vip;default:false"`
+	Role          string    `json:"role" gorm:"size:20;default:'USER'"`
+	Message       string    `json:"message" gorm:"type:text;not null"`
+	SharedAudioID *uint     `json:"sharedAudioId,omitempty" gorm:"column:shared_audio_id;index"`
+	SharedAudio   *Audio    `json:"sharedAudio,omitempty" gorm:"foreignKey:SharedAudioID"`
+	CreatedAt     time.Time `json:"createdAt" gorm:"index"`
+}
+
+// Leaderboard DTOs
+type TopListener struct {
+	Rank           int     `json:"rank"`
+	UserID         uint    `json:"userId"`
+	Username       string  `json:"username"`
+	AvatarURL      string  `json:"avatarUrl"`
+	TotalSeconds   int64   `json:"totalSeconds"`
+	TotalHours     float64 `json:"totalHours"`
+	IsVIP          bool    `json:"isVip"`
+	Role           string  `json:"role"`
+	Membership     string  `json:"membership"`
+	LastAudioTitle string  `json:"lastAudioTitle,omitempty"`
+}
+
+type VipRankingMember struct {
+	Rank         int        `json:"rank"`
+	UserID       uint       `json:"userId"`
+	Username     string     `json:"username"`
+	AvatarURL    string     `json:"avatarUrl"`
+	Role         string     `json:"role"`
+	Membership   string     `json:"membership"`
+	VipExpiresAt *time.Time `json:"vipExpiresAt,omitempty"`
+	VipBadge     string     `json:"vipBadge"`
+	TotalHours   float64    `json:"totalHours"`
+	JoinedAt     time.Time  `json:"joinedAt"`
+}
+
 // TableName overrides for GORM to match DDL specs
 func (User) TableName() string                   { return "users" }
 func (Category) TableName() string               { return "categories" }
@@ -194,6 +247,8 @@ func (Favorite) TableName() string               { return "favorites" }
 func (Notification) TableName() string           { return "notifications" }
 func (NotificationPreference) TableName() string { return "notification_preferences" }
 func (MembershipOrder) TableName() string        { return "membership_orders" }
+func (SystemSetting) TableName() string          { return "system_settings" }
+func (CommunityMessage) TableName() string       { return "community_messages" }
 
 // Consolidated History Item for Profile
 type ConsolidatedHistoryItem struct {

@@ -18,6 +18,7 @@ export const Header: React.FC = () => {
         >
           <div className="w-8 h-8 rounded-lg border-2 border-black bg-[#FFE600] text-black flex items-center justify-center font-black shadow-comic-sm">
             <i className="ri-headphone-fill text-lg" />
+            {/* <link rel="stylesheet" href=".//public/wavelink-icon.png" /> */}
           </div>
           <div className="flex flex-col min-w-0">
             <span className="font-extrabold text-sm uppercase tracking-tight text-black leading-tight flex items-center gap-1.5">
@@ -31,7 +32,7 @@ export const Header: React.FC = () => {
               </span>
             </span>
             <span className="text-[10px] font-bold text-gray-500 truncate leading-tight">
-              Audio Streaming Engine
+             <strong className="font-black text-black" > {user?.username || 'Guest'}</strong> đang trực tuyến
             </span>
           </div>
         </div>

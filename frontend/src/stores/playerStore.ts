@@ -3,6 +3,8 @@ import { AudioItem, Episode } from '@/types';
 import { api } from '@/services/api';
 import { rateCoordinator, RateSyncStatus } from '@/lib/playbackRateCoordinator';
 import { playerLogger } from '@/lib/playerLogger';
+import { useAuthStore } from '@/stores/authStore';
+import { toast } from '@/components/ui/Toast';
 
 // Global YouTube Player instance reference
 declare global {
@@ -232,6 +234,31 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       };
     }
 
+    // Kiểm tra quyền hạn VIP: Tập 1 được nghe thử nếu truyện có >1 tập, tập 2+ hoặc truyện 1 tập yêu cầu tài khoản VIP
+    const currentUser = useAuthStore.getState().user;
+    const isVipOrAdmin = currentUser?.role === 'VIP' || currentUser?.role === 'ADMIN' || currentUser?.membership === 'VIP';
+    const isVipAudio = Boolean(audio.isVIPOnly || audio.isVipOnly || targetEpisode.isVip);
+    const totalEps = audio.totalEpisodes || audio.episodes?.length || 1;
+
+    if (isVipAudio && !isVipOrAdmin) {
+      if (totalEps <= 1 || targetEpisode.episodeNumber > 1 || targetEpisode.isLocked) {
+        if (ytPlayerInstance && typeof ytPlayerInstance.pauseVideo === 'function') {
+          try {
+            ytPlayerInstance.pauseVideo();
+          } catch {}
+        }
+        stopPolling();
+        stopHeartbeat();
+        set({ isPlaying: false });
+        if (totalEps <= 1) {
+          toast.error('Nội dung này độc quyền dành riêng cho thành viên VIP. Vui lòng nâng cấp gói để thưởng thức!');
+        } else {
+          toast.error('Tập 2 trở đi chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói để tiếp tục nghe!');
+        }
+        return;
+      }
+    }
+
     const duration =
       targetEpisode.duration || (targetEpisode.endSeconds - targetEpisode.startSeconds) || 14400;
 
@@ -346,10 +373,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   seekTo: (seconds: number) => {
-    const { currentEpisode, duration } = get();
+    const { currentEpisode, duration, currentAudio } = get();
     if (!currentEpisode) return;
 
-    const clamped = Math.max(0, Math.min(seconds, duration));
+    const currentUser = useAuthStore.getState().user;
+    const isVipOrAdmin = currentUser?.role === 'VIP' || currentUser?.role === 'ADMIN' || currentUser?.membership === 'VIP';
+    const isVipAudio = Boolean(currentAudio?.isVIPOnly || currentAudio?.isVipOnly || currentEpisode.isVip);
+
+    let maxAllowed = duration;
+    if (isVipAudio && !isVipOrAdmin) {
+      maxAllowed = Math.min(duration, (currentEpisode.endSeconds - currentEpisode.startSeconds) || duration);
+    }
+
+    const clamped = Math.max(0, Math.min(seconds, maxAllowed));
     set({ currentTime: clamped, isSeeking: true });
 
     if (seekDebounceTimer) clearTimeout(seekDebounceTimer);
@@ -384,7 +420,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const eps = currentAudio.episodes;
     const currentIndex = eps.findIndex((e) => e.id === currentEpisode?.id);
     if (currentIndex !== -1 && currentIndex + 1 < eps.length) {
-      get().play(currentAudio, eps[currentIndex + 1], 0);
+      const nextEp = eps[currentIndex + 1];
+      const currentUser = useAuthStore.getState().user;
+      const isVipOrAdmin = currentUser?.role === 'VIP' || currentUser?.role === 'ADMIN' || currentUser?.membership === 'VIP';
+      const isVipAudio = Boolean(currentAudio.isVIPOnly || currentAudio.isVipOnly || nextEp.isVip);
+      if (isVipAudio && !isVipOrAdmin && nextEp.episodeNumber > 1) {
+        toast.error('Tập tiếp theo chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!');
+        return;
+      }
+      get().play(currentAudio, nextEp, 0);
     }
   },
 
@@ -539,11 +583,28 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     saveProgressFor(currentAudio, currentEpisode, duration, duration);
 
+    const currentUser = useAuthStore.getState().user;
+    const isVipOrAdmin = currentUser?.role === 'VIP' || currentUser?.role === 'ADMIN' || currentUser?.membership === 'VIP';
+    const isVipAudio = Boolean(currentAudio.isVIPOnly || currentAudio.isVipOnly || currentEpisode.isVip);
+
     const eps = currentAudio.episodes || [];
     const currentIndex = eps.findIndex((e) => e.id === currentEpisode.id);
     if (currentIndex !== -1 && currentIndex + 1 < eps.length) {
+      const nextEp = eps[currentIndex + 1];
+      if (isVipAudio && !isVipOrAdmin && nextEp.episodeNumber > 1) {
+        if (ytPlayerInstance && typeof ytPlayerInstance.pauseVideo === 'function') {
+          try {
+            ytPlayerInstance.pauseVideo();
+          } catch {}
+        }
+        stopPolling();
+        stopHeartbeat();
+        set({ isPlaying: false });
+        toast.error('Bạn đã xem xong tập 1 nghe thử. Tập 2 trở đi chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!');
+        return;
+      }
       setTimeout(() => {
-        get().play(currentAudio, eps[currentIndex + 1], 0);
+        get().play(currentAudio, nextEp, 0);
       }, 1000);
     } else {
       get().pause();
@@ -611,6 +672,15 @@ function pollIntervalHandler() {
       }
 
       if (absTime >= endSec && endSec > startSec) {
+        const currentUser = useAuthStore.getState().user;
+        const isVipOrAdmin = currentUser?.role === 'VIP' || currentUser?.role === 'ADMIN' || currentUser?.membership === 'VIP';
+        const isVipAudio = Boolean(store.currentAudio?.isVIPOnly || store.currentAudio?.isVipOnly || store.currentEpisode?.isVip);
+        if (isVipAudio && !isVipOrAdmin) {
+          try {
+            ytPlayerInstance.pauseVideo();
+            ytPlayerInstance.seekTo(endSec, true);
+          } catch {}
+        }
         store.handleEpisodeComplete();
         return;
       }

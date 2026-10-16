@@ -384,44 +384,18 @@ export const AuthPage: React.FC = () => {
           </button>
         </div>
 
-        {/* 1-Click Guest Access */}
-        {/* <button
+        {/* Trải nghiệm Khách vãng lai (Chưa đăng nhập, không lưu tài khoản vào DB) */}
+        <button
           onClick={handleGuestLogin}
           type="button"
           disabled={isLoading}
           className="btn-comic btn-comic-yellow text-xs py-2.5 font-black shadow-comic mt-1"
         >
-          <i className="ri-flashlight-fill text-base" /> Khách Nghe Thử (1-Click)
-        </button> */}
+          <i className="ri-flashlight-fill text-base" /> Nghe Thử
+        </button>
       </div>
 
-      {/* Footer Demo Accounts Info */}
-      <div className="text-center text-[11px] font-bold text-gray-600 flex flex-col gap-1.5 items-center">
-        <span>Tài khoản mẫu (Bấm để điền nhanh):</span>
-        <div className="flex flex-wrap items-center justify-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => handleFillDemo('admin123', 'admin123')}
-            className="badge-comic badge-comic-white hover:badge-comic-yellow text-[10px] cursor-pointer"
-          >
-            👑 admin123 (Admin)
-          </button>
-          <button
-            type="button"
-            onClick={() => handleFillDemo('vip123', 'vip123')}
-            className="badge-comic badge-comic-white hover:badge-comic-yellow text-[10px] cursor-pointer"
-          >
-            💎 vip123 (VIP)
-          </button>
-          <button
-            type="button"
-            onClick={() => handleFillDemo('user123', 'user123')}
-            className="badge-comic badge-comic-white hover:badge-comic-yellow text-[10px] cursor-pointer"
-          >
-            👤 user123 (Free)
-          </button>
-        </div>
-      </div>
+  
     </div>
   );
 };
