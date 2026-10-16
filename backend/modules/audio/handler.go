@@ -455,6 +455,12 @@ func (h *Handler) ImportYouTube(c *gin.Context) {
 
 	// 5. Suy luận thời lượng (Duration Inference)
 	duration := external.InferDurationFromMetadata(meta, req.DurationSeconds)
+	if duration <= 0 {
+		duration = req.BlockSizeSeconds
+		if duration <= 0 {
+			duration = 3600 // Mặc định 1 giờ an toàn thay vì 16 giờ
+		}
+	}
 
 	// 6. Transactional Persistence (GORM Atomic Transaction)
 	var newAudio domain.Audio

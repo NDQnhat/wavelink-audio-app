@@ -9,6 +9,7 @@ import { YouTubePreviewData, AudioItem } from '@/types';
 import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { extractYouTubeId, formatTime, formatDuration, parseDurationToSec, computeLogicalEpisodes } from '@/lib/utils';
+import { resolveYouTubeDurationViaIframe } from '@/lib/youtubeResolver';
 
 export const UploadPage: React.FC = () => {
   const navigate = useNavigate();
@@ -52,14 +53,35 @@ export const UploadPage: React.FC = () => {
       const data = await api.audio.previewYouTube(trimmed, isLive);
       if (data) {
         setPreviewData(data);
-        if (data.formattedDuration) {
+        if (data.formattedDuration && data.durationSeconds > 0) {
           setDurationInput(data.formattedDuration);
         } else if (data.durationSeconds > 0) {
           setDurationInput(formatDuration(data.durationSeconds));
+        } else {
+          // Fallback probe client-side nếu backend chưa có thời lượng
+          const resolvedDur = await resolveYouTubeDurationViaIframe(videoId);
+          if (resolvedDur > 0) {
+            setPreviewData({
+              ...data,
+              durationSeconds: resolvedDur,
+              formattedDuration: formatDuration(resolvedDur),
+            });
+            setDurationInput(formatDuration(resolvedDur));
+          }
+        }
+      } else {
+        const resolvedDur = await resolveYouTubeDurationViaIframe(videoId);
+        if (resolvedDur > 0) {
+          setDurationInput(formatDuration(resolvedDur));
         }
       }
     } catch {
-      // Ignored
+      try {
+        const resolvedDur = await resolveYouTubeDurationViaIframe(videoId);
+        if (resolvedDur > 0) {
+          setDurationInput(formatDuration(resolvedDur));
+        }
+      } catch {}
     } finally {
       setIsChecking(false);
     }
@@ -127,6 +149,15 @@ export const UploadPage: React.FC = () => {
     if (previewData && previewData.durationSeconds > 0) {
       if (dur <= 0 || Math.abs(dur - previewData.durationSeconds) < 60) {
         dur = previewData.durationSeconds;
+      }
+    }
+    // Nếu dur vẫn <= 0, thử probe nhanh thời lượng qua IFrame client-side
+    if (dur <= 0) {
+      const vid = extractYouTubeId(url.trim());
+      if (vid) {
+        try {
+          dur = await resolveYouTubeDurationViaIframe(vid);
+        } catch {}
       }
     }
 

@@ -48,10 +48,6 @@ func ExtractYouTubeVideoID(rawURL string) mo.Result[string] {
 
 // InferDuration suy luận thời lượng video (giây) từ tiêu đề nếu oEmbed không trả về duration
 func InferDuration(title string, fallbackSec int) int {
-	if fallbackSec <= 0 {
-		fallbackSec = 57600 // 16 giờ mặc định cho audio truyện dài
-	}
-
 	var totalSec int
 	hourMatch := hourPattern.FindStringSubmatch(title)
 	if len(hourMatch) >= 2 {

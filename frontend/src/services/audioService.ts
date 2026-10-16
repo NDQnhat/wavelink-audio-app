@@ -287,7 +287,7 @@ export const audioService = {
     const videoId = extractYouTubeId(payload.url);
     if (!videoId) throw new Error('URL YouTube không hợp lệ!');
 
-    const duration = payload.durationSeconds && payload.durationSeconds > 0 ? payload.durationSeconds : 57600;
+    const duration = payload.durationSeconds && payload.durationSeconds > 0 ? payload.durationSeconds : 0;
     const blockSize = payload.blockSizeSeconds || 14400;
 
     if (isLive) {
@@ -364,14 +364,15 @@ export const audioService = {
       videoId,
       title: 'Audio mới nhập - ' + videoId,
       author: 'YouTube Creator',
-      durationSeconds: duration,
-      formattedDuration: formatDuration(duration),
+      durationSeconds: 0,
+      formattedDuration: '',
       thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
     };
 
+    const finalDuration = duration > 0 ? duration : (preview.durationSeconds > 0 ? preview.durationSeconds : (payload.blockSizeSeconds || 14400));
     const cat = db.categories.find((c) => c.id === payload.categoryId) || { id: 1, name: 'Tiên hiệp', slug: 'tien-hiep' };
     const isVip = Boolean(payload.isVipOnly);
-    const rawEpisodes = localDb.generateEpisodes(duration, blockSize, Date.now(), isVip);
+    const rawEpisodes = localDb.generateEpisodes(finalDuration, blockSize, Date.now(), isVip);
     const totalEps = rawEpisodes.length;
     const episodes = rawEpisodes.map((ep) => {
       return {
