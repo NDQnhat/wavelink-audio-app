@@ -150,19 +150,13 @@ jobs:
 
       # Build & Push Backend Docker Image
       - name: Build and Push Backend Image
-        run: |
-          echo "=== BẮT ĐẦU BUILD BACKEND DOCKER IMAGE ==="
-          BUILD_TAG_ARGS=""
-          for tag in ${{ steps.meta-backend.outputs.tags }}; do
-            BUILD_TAG_ARGS="$BUILD_TAG_ARGS -t $tag"
-          done
-          docker build --progress=plain $BUILD_TAG_ARGS -f backend/Dockerfile backend
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            for tag in ${{ steps.meta-backend.outputs.tags }}; do
-              echo "Pushing $tag to GHCR..."
-              docker push $tag
-            done
-          fi
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
 
       # Trích xuất metadata (tags, labels) cho Frontend
       - name: Extract Docker metadata (Frontend)
@@ -177,22 +171,16 @@ jobs:
 
       # Build & Push Frontend Docker Image
       - name: Build and Push Frontend Image
-        run: |
-          echo "=== BẮT ĐẦU BUILD FRONTEND DOCKER IMAGE ==="
-          BUILD_TAG_ARGS=""
-          for tag in ${{ steps.meta-frontend.outputs.tags }}; do
-            BUILD_TAG_ARGS="$BUILD_TAG_ARGS -t $tag"
-          done
-          docker build --progress=plain \
-            --build-arg VITE_API_BASE_URL=/api/v1 \
-            --build-arg VITE_ITEMS_PER_PAGE=12 \
-            $BUILD_TAG_ARGS -f frontend/Dockerfile frontend
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            for tag in ${{ steps.meta-frontend.outputs.tags }}; do
-              echo "Pushing $tag to GHCR..."
-              docker push $tag
-            done
-          fi
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          build-args: |
+            VITE_API_BASE_URL=/api/v1
+            VITE_ITEMS_PER_PAGE=12
 
       # Trigger Render Deploy Hook (Tùy chọn nếu người dùng cấu hình RENDER_DEPLOY_HOOK_URL trong Repo Secrets)
       - name: Trigger Render Auto-Deploy Hook (Optional)
