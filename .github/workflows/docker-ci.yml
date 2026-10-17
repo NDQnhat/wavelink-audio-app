@@ -224,13 +224,13 @@ jobs:
       - name: Trigger Render Auto-Deploy Hook
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
-          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL || secrets.RENDER_DEPLOY_HOOK }}
         run: |
           if [ -n "$RENDER_DEPLOY_HOOK_URL" ]; then
             echo "Đang gửi tín hiệu Deploy Hook tới Render..."
             curl -s -f -X POST "$RENDER_DEPLOY_HOOK_URL" || echo "Cảnh báo: Không thể gọi Render Deploy Hook."
           else
-            echo "Bỏ qua Render Deploy Hook (RENDER_DEPLOY_HOOK_URL chưa được thiết lập)."
+            echo "Bỏ qua Render Deploy Hook (Chưa thiết lập RENDER_DEPLOY_HOOK_URL hoặc RENDER_DEPLOY_HOOK)."
           fi
 
       - name: Check FTP Secret
