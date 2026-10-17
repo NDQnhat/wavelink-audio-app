@@ -13,6 +13,7 @@ import {
 import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { LoadingState } from '@/components/common/LoadingState';
+import { NotificationsSkeleton } from '@/components/common/Skeletons';
 import { Pagination } from '@/components/ui/Pagination';
 import { NOTIFICATION_PAGE_SIZE } from '@/config/pagination';
 import { externalNotificationService } from '@/services/externalNotificationService';
@@ -170,7 +171,7 @@ export const NotificationsPage: React.FC = () => {
   };
 
   if (isLoading) {
-    return <LoadingState message="Đang tải thông báo..." />;
+    return <NotificationsSkeleton />;
   }
 
   return (

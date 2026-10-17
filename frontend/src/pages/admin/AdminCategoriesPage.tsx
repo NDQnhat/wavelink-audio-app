@@ -7,9 +7,10 @@ import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { Pagination } from '@/components/ui/Pagination';
 import { DEFAULT_PAGE_SIZE } from '@/config/pagination';
+import { AdminTableSkeleton } from '@/components/common/Skeletons';
 
 export const AdminCategoriesPage: React.FC = () => {
-  const { data: categories = [] } = useCategories();
+  const { data: categories = [], isLoading: catLoading } = useCategories();
   const createCatMutation = useCreateCategory();
   const updateCatMutation = useUpdateCategory();
   const deleteCatMutation = useDeleteCategory();
@@ -136,9 +137,14 @@ export const AdminCategoriesPage: React.FC = () => {
             </button>
           </div>
           <div className="flex flex-col gap-2">
-            {categories
-              .slice((currentCatPage - 1) * pageSize, currentCatPage * pageSize)
-              .map((c) => (
+            {catLoading ? (
+              <AdminTableSkeleton rows={3} />
+            ) : categories.length === 0 ? (
+              <div className="card-comic p-4 text-center text-xs font-bold text-gray-500">Chưa có thể loại nào.</div>
+            ) : (
+              categories
+                .slice((currentCatPage - 1) * pageSize, currentCatPage * pageSize)
+                .map((c) => (
                 <div key={c.id} className="card-comic-sm p-2.5 bg-white flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="badge-comic badge-comic-blue text-[9px] py-0 px-1.5 font-bold truncate">
@@ -161,7 +167,8 @@ export const AdminCategoriesPage: React.FC = () => {
                     </button>
                   </div>
                 </div>
-              ))}
+              ))
+            )}
           </div>
 
           <Pagination

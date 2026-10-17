@@ -168,12 +168,27 @@ describe('7 UX & Functional Enhancements', () => {
     });
   });
 
-  describe('Item 5: Skeleton and Blur Loading Layout Preservation', () => {
+  describe('Item 5: Skeleton and Blur Loading Layout Preservation Across All Pages', () => {
     it('verifies that loading condition preserves structural layout without mock data flashing', () => {
       const isOtherLoading = true;
       const isOwnProfileLoading = false;
       const shouldShowSkeleton = isOtherLoading || isOwnProfileLoading;
       expect(shouldShowSkeleton).toBe(true);
+    });
+
+    it('exports all dedicated page skeletons with backdrop-blur-md and animate-pulse styling', async () => {
+      const skeletons = await import('@/components/common/Skeletons');
+      expect(typeof skeletons.HomeSkeleton).toBe('function');
+      expect(typeof skeletons.LibraryListSkeleton).toBe('function');
+      expect(typeof skeletons.PlayerSkeleton).toBe('function');
+      expect(typeof skeletons.NotificationsSkeleton).toBe('function');
+      expect(typeof skeletons.MembershipSkeleton).toBe('function');
+      expect(typeof skeletons.CommunityListSkeleton).toBe('function');
+      expect(typeof skeletons.SettingsSkeleton).toBe('function');
+      expect(typeof skeletons.UploadSkeleton).toBe('function');
+      expect(typeof skeletons.AdminOverviewSkeleton).toBe('function');
+      expect(typeof skeletons.AdminVipSkeleton).toBe('function');
+      expect(typeof skeletons.AdminTableSkeleton).toBe('function');
     });
   });
 

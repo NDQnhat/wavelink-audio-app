@@ -1,16 +1,27 @@
-﻿import React from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { useStats } from '@/hooks/useStats';
 import { useCategories } from '@/hooks/useCategories';
 import { AdminTabs } from './AdminTabs';
 import { Button } from '@/components/ui/Button';
+import { AdminOverviewSkeleton } from '@/components/common/Skeletons';
 
 export const AdminOverviewPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuthStore();
+  const { user, isLoading, isInitialized } = useAuthStore();
   const { data: stats } = useStats();
   const { data: categories = [] } = useCategories();
+
+  const isAuthLoading =
+    isLoading ||
+    (!isInitialized &&
+      !user &&
+      Boolean(typeof localStorage !== 'undefined' && localStorage.getItem('auth_token')));
+
+  if (isAuthLoading) {
+    return <AdminOverviewSkeleton />;
+  }
 
   if (user?.role !== 'ADMIN') {
     return (

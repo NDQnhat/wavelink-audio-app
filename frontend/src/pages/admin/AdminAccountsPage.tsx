@@ -6,6 +6,7 @@ import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { api } from '@/services/api';
 import { LoadingState } from '@/components/common/LoadingState';
+import { AdminTableSkeleton } from '@/components/common/Skeletons';
 import { Pagination } from '@/components/ui/Pagination';
 import { DEFAULT_PAGE_SIZE } from '@/config/pagination';
 
@@ -86,7 +87,7 @@ export const AdminAccountsPage: React.FC = () => {
         </div>
 
         {isLoading ? (
-          <LoadingState message="Đang tải danh sách tài khoản..." />
+          <AdminTableSkeleton rows={4} />
         ) : users.length === 0 ? (
           <div className="card-comic p-6 text-center text-xs font-bold text-gray-600 bg-white">
             Chưa có tài khoản người dùng nào trên hệ thống.

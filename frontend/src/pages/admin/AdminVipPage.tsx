@@ -5,6 +5,7 @@ import { MembershipPackage, PaymentInfo } from '@/types';
 import { toast } from '@/components/ui/Toast';
 import { formatVND } from '@/lib/utils';
 import { LoadingState } from '@/components/common/LoadingState';
+import { AdminVipSkeleton } from '@/components/common/Skeletons';
 
 export const AdminVipPage: React.FC = () => {
   const { data: serverPackages = [], isLoading: pkgsLoading } = useMembershipPackages();
@@ -109,7 +110,7 @@ export const AdminVipPage: React.FC = () => {
   };
 
   if (pkgsLoading || payLoading) {
-    return <LoadingState message="Đang tải cấu hình VIP..." />;
+    return <AdminVipSkeleton />;
   }
 
   const demoQrUrl = `https://img.vietqr.io/image/970422-${accountNumber.trim()}-compact2.png?amount=49000&addInfo=${encodeURIComponent(

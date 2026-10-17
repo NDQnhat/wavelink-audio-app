@@ -4,6 +4,7 @@ import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { api } from '@/services/api';
 import { LoadingState } from '@/components/common/LoadingState';
+import { AdminTableSkeleton } from '@/components/common/Skeletons';
 import { Pagination } from '@/components/ui/Pagination';
 import { CommunityMessage, CommunityAdminStats, WSCommunityMessage } from '@/types';
 import { DEFAULT_PAGE_SIZE } from '@/config/pagination';
@@ -282,7 +283,7 @@ export const AdminCommunityPage: React.FC = () => {
         </div>
 
         {isLoading ? (
-          <LoadingState message="Đang tải danh sách tin nhắn cộng đồng..." />
+          <AdminTableSkeleton rows={4} />
         ) : pagedMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-gray-500 gap-2">
             <i className="ri-chat-smile-3-line text-4xl text-gray-300" />

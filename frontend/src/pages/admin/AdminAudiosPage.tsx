@@ -7,6 +7,7 @@ import { AdminTabs } from './AdminTabs';
 import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { LoadingState } from '@/components/common/LoadingState';
+import { AdminTableSkeleton } from '@/components/common/Skeletons';
 import { Pagination } from '@/components/ui/Pagination';
 import { DEFAULT_PAGE_SIZE } from '@/config/pagination';
 
@@ -143,7 +144,7 @@ export const AdminAudiosPage: React.FC = () => {
 
         {/* List Container */}
         {isLoading ? (
-          <LoadingState message="Đang tải danh sách audio quản trị..." />
+          <AdminTableSkeleton rows={4} />
         ) : filteredAudios.length === 0 ? (
           <div className="card-comic p-6 text-center text-xs font-bold text-gray-600 bg-white">
             Không tìm thấy audio nào phù hợp.

@@ -6,6 +6,7 @@ import { useTags } from '@/hooks/useTags';
 import { usePlayerStore } from '@/stores/playerStore';
 import { useAuthStore } from '@/stores/authStore';
 import { LoadingState } from '@/components/common/LoadingState';
+import { LibraryListSkeleton } from '@/components/common/Skeletons';
 import { EmptyState } from '@/components/common/EmptyState';
 import { toast } from '@/components/ui/Toast';
 import { Pagination } from '@/components/ui/Pagination';
@@ -281,7 +282,7 @@ export const LibraryPage: React.FC = () => {
 
       {/* 5. Audio Cards Container */}
       {isLoading ? (
-        <LoadingState message="Đang tìm kiếm kho truyện..." />
+        <LibraryListSkeleton />
       ) : uniqueAudios.length === 0 ? (
         <EmptyState
           icon="ri-search-eye-line"

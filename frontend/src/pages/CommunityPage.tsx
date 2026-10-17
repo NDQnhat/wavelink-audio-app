@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { toast } from '@/components/ui/Toast';
 import { api } from '@/services/api';
+import { CommunityListSkeleton } from '@/components/common/Skeletons';
 import { CommunityMessage, TopListener, VipRankingMember, WSCommunityMessage } from '@/types';
 
 type TabKey = 'chat' | 'top10' | 'vip';
@@ -515,9 +516,7 @@ export const CommunityPage: React.FC = () => {
           </div>
 
           {loadingTop ? (
-            <div className="flex items-center justify-center py-12 font-bold text-xs text-gray-500">
-              <i className="ri-loader-4-line animate-spin text-xl mr-2" /> Đang tải bảng xếp hạng...
-            </div>
+            <CommunityListSkeleton count={5} />
           ) : topListeners.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-gray-500 gap-2">
               <i className="ri-headphone-line text-4xl text-gray-300" />
@@ -652,9 +651,7 @@ export const CommunityPage: React.FC = () => {
           </div>
 
           {loadingVip ? (
-            <div className="flex items-center justify-center py-12 font-bold text-xs text-gray-500">
-              <i className="ri-loader-4-line animate-spin text-xl mr-2" /> Đang tải danh sách VIP...
-            </div>
+            <CommunityListSkeleton count={5} />
           ) : vipMembers.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-gray-500 gap-2">
               <i className="ri-vip-crown-line text-4xl text-gray-300" />

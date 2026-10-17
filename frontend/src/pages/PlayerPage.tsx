@@ -4,6 +4,7 @@ import { useAudio, useToggleFavorite } from '@/hooks/useAudio';
 import { usePlayerStore } from '@/stores/playerStore';
 import { useAuthStore } from '@/stores/authStore';
 import { LoadingState } from '@/components/common/LoadingState';
+import { PlayerSkeleton } from '@/components/common/Skeletons';
 import { Modal } from '@/components/ui/Modal';
 import { Slider } from '@/components/ui/Slider';
 import { Equalizer } from '@/components/ui/Equalizer';
@@ -70,7 +71,7 @@ export const PlayerPage: React.FC = () => {
   };
 
   if (isLoading) {
-    return <LoadingState message="Đang tải thông tin trình phát..." />;
+    return <PlayerSkeleton />;
   }
 
   if (!audio) {

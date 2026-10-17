@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { useMembershipPackages, useMyMembership, useCreateMembershipOrder, useSimulatePayment } from '@/hooks/useMembership';
@@ -7,6 +7,7 @@ import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { formatVND } from '@/lib/utils';
 import { LoadingState } from '@/components/common/LoadingState';
+import { MembershipSkeleton } from '@/components/common/Skeletons';
 
 export const MembershipPage: React.FC = () => {
   const navigate = useNavigate();
@@ -106,7 +107,7 @@ export const MembershipPage: React.FC = () => {
   };
 
   if (pkgLoading) {
-    return <LoadingState message="Đang tải danh sách gói VIP..." />;
+    return <MembershipSkeleton />;
   }
 
   return (

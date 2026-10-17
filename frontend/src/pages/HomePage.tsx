@@ -7,6 +7,7 @@ import { useCategories } from '@/hooks/useCategories';
 import { usePlayerStore } from '@/stores/playerStore';
 import { useAuthStore } from '@/stores/authStore';
 import { LoadingState } from '@/components/common/LoadingState';
+import { HomeSkeleton } from '@/components/common/Skeletons';
 import { toast } from '@/components/ui/Toast';
 import { formatTime } from '@/lib/utils';
 import { AudioItem, Episode } from '@/types';
@@ -73,8 +74,8 @@ export const HomePage: React.FC = () => {
     return list;
   }, [audios, selectedCategory, homeTab]);
 
-  if (statsLoading && audiosLoading) {
-    return <LoadingState message="Đang tải dữ liệu trang chủ..." />;
+  if (audiosLoading || (statsLoading && audios.length === 0)) {
+    return <HomeSkeleton />;
   }
 
   const selectedCategoryName = categories.find((c) => c.id === selectedCategory)?.name;

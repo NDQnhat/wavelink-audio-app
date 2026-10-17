@@ -9,6 +9,7 @@ import { api } from '@/services/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { formatTime } from '@/lib/utils';
 import { LoadingState } from '@/components/common/LoadingState';
+import { AdminTableSkeleton } from '@/components/common/Skeletons';
 import { Pagination } from '@/components/ui/Pagination';
 import { DEFAULT_PAGE_SIZE } from '@/config/pagination';
 
@@ -238,7 +239,7 @@ export const AdminEpisodesPage: React.FC = () => {
 
         {/* Episodes List */}
         {episodesLoading || audiosLoading ? (
-          <LoadingState message="Đang nạp danh sách tập..." />
+          <AdminTableSkeleton rows={4} />
         ) : episodes.length === 0 ? (
           <div className="card-comic p-6 text-center text-xs font-bold text-gray-600 bg-white">
             Bộ audio này chưa có tập nào.

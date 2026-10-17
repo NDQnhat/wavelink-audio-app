@@ -10,10 +10,11 @@ import { Modal } from '@/components/ui/Modal';
 import { toast } from '@/components/ui/Toast';
 import { extractYouTubeId, formatTime, formatDuration, parseDurationToSec, computeLogicalEpisodes } from '@/lib/utils';
 import { resolveYouTubeDurationViaIframe } from '@/lib/youtubeResolver';
+import { UploadSkeleton } from '@/components/common/Skeletons';
 
 export const UploadPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, isLive } = useAuthStore();
+  const { user, isLive, isLoading, isInitialized } = useAuthStore();
   const { data: categories = [] } = useCategories();
   const importMutation = useImportYouTube();
   const { data: importQuota } = useImportQuota();
@@ -266,6 +267,16 @@ export const UploadPage: React.FC = () => {
       toast.error((err as Error).message || 'Lỗi khi nhập audio');
     }
   };
+
+  const isAuthLoading =
+    isLoading ||
+    (!isInitialized &&
+      !user &&
+      Boolean(typeof localStorage !== 'undefined' && localStorage.getItem('auth_token')));
+
+  if (isAuthLoading) {
+    return <UploadSkeleton />;
+  }
 
   return (
     <div className="flex flex-col w-full px-4 pb-36 gap-4 pt-2 fade-in-comic">

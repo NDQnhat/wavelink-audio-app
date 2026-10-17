@@ -8,6 +8,7 @@ import { AdminTabs } from '@/pages/admin/AdminTabs';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { toast } from '@/components/ui/Toast';
+import { SettingsSkeleton } from '@/components/common/Skeletons';
 import { api } from '@/services/api';
 import {
   useNotificationPreferences,
@@ -46,7 +47,7 @@ declare global {
 
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, isLive, logout, refreshUser } = useAuthStore();
+  const { user, isLive, logout, refreshUser, isLoading, isInitialized } = useAuthStore();
   const { theme, setTheme } = useThemeStore();
   const { playbackRate, setPlaybackRate } = usePlayerStore();
   const { data: myMembership } = useMyMembership();
@@ -356,6 +357,16 @@ export const SettingsPage: React.FC = () => {
     toast.info('Đã đăng xuất khỏi WaveLink');
     navigate('/login');
   };
+
+  const isAuthLoading =
+    isLoading ||
+    (!isInitialized &&
+      !user &&
+      Boolean(typeof localStorage !== 'undefined' && localStorage.getItem('auth_token')));
+
+  if (isAuthLoading) {
+    return <SettingsSkeleton />;
+  }
 
   return (
     <div className="flex flex-col w-full pb-36 fade-in-comic">
