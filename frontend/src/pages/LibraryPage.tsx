@@ -1,16 +1,16 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAudios, useToggleFavorite } from '@/hooks/useAudio';
-import { useCategories } from '@/hooks/useCategories';
-import { useTags } from '@/hooks/useTags';
-import { usePlayerStore } from '@/stores/playerStore';
-import { useAuthStore } from '@/stores/authStore';
-import { LoadingState } from '@/components/common/LoadingState';
-import { LibraryListSkeleton } from '@/components/common/Skeletons';
-import { EmptyState } from '@/components/common/EmptyState';
-import { toast } from '@/components/ui/Toast';
-import { Pagination } from '@/components/ui/Pagination';
-import { DEFAULT_PAGE_SIZE } from '@/config/pagination';
+import React, { useState, useRef, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAudios, useToggleFavorite } from "@/hooks/useAudio";
+import { useCategories } from "@/hooks/useCategories";
+import { useTags } from "@/hooks/useTags";
+import { usePlayerStore } from "@/stores/playerStore";
+import { useAuthStore } from "@/stores/authStore";
+import { LoadingState } from "@/components/common/LoadingState";
+import { LibraryListSkeleton } from "@/components/common/Skeletons";
+import { EmptyState } from "@/components/common/EmptyState";
+import { toast } from "@/components/ui/Toast";
+import { Pagination } from "@/components/ui/Pagination";
+import { DEFAULT_PAGE_SIZE } from "@/config/pagination";
 
 export const LibraryPage: React.FC = () => {
   const navigate = useNavigate();
@@ -19,12 +19,17 @@ export const LibraryPage: React.FC = () => {
   const { currentAudio, isPlaying, play, togglePlay } = usePlayerStore();
   const toggleFavoriteMutation = useToggleFavorite();
 
-  const urlCategory = searchParams.get('categoryId') ? Number(searchParams.get('categoryId')) : null;
-  const urlStatus = searchParams.get('status') || 'all';
-  const urlSearch = searchParams.get('search') || '';
-  const urlUserId = searchParams.get('userId') || searchParams.get('createdBy') || '';
+  const urlCategory = searchParams.get("categoryId")
+    ? Number(searchParams.get("categoryId"))
+    : null;
+  const urlStatus = searchParams.get("status") || "all";
+  const urlSearch = searchParams.get("search") || "";
+  const urlUserId =
+    searchParams.get("userId") || searchParams.get("createdBy") || "";
 
-  const [activeCategory, setActiveCategory] = useState<number | null>(urlCategory);
+  const [activeCategory, setActiveCategory] = useState<number | null>(
+    urlCategory,
+  );
   const [activeStatus, setActiveStatus] = useState<string>(urlStatus);
   const [searchQuery, setSearchQuery] = useState<string>(urlSearch);
 
@@ -40,16 +45,21 @@ export const LibraryPage: React.FC = () => {
 
   // Kiểm tra xem đang lọc truyện của chính mình hay của người khác
   const isViewingMyStories = Boolean(
-    activeStatus === 'my' || (urlUserId && user?.id && String(user.id) === String(urlUserId))
+    activeStatus === "my" ||
+    (urlUserId && user?.id && String(user.id) === String(urlUserId)),
   );
   const isViewingOtherUserStories = Boolean(
-    urlUserId && (!user?.id || String(user.id) !== String(urlUserId))
+    urlUserId && (!user?.id || String(user.id) !== String(urlUserId)),
   );
 
   const { data: audios = [], isLoading } = useAudios({
     search: searchQuery,
     categoryId: activeCategory,
-    status: isViewingMyStories ? 'my' : activeStatus === 'all' ? null : activeStatus,
+    status: isViewingMyStories
+      ? "my"
+      : activeStatus === "all"
+        ? null
+        : activeStatus,
     userId: urlUserId || undefined,
   });
 
@@ -82,8 +92,8 @@ export const LibraryPage: React.FC = () => {
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(() => {
       const nextParams = new URLSearchParams(searchParams);
-      if (val) nextParams.set('search', val);
-      else nextParams.delete('search');
+      if (val) nextParams.set("search", val);
+      else nextParams.delete("search");
       setSearchParams(nextParams);
     }, 350);
   };
@@ -91,28 +101,28 @@ export const LibraryPage: React.FC = () => {
   const handleCategorySelect = (catId: number | null) => {
     setActiveCategory(catId);
     const nextParams = new URLSearchParams(searchParams);
-    if (catId) nextParams.set('categoryId', String(catId));
-    else nextParams.delete('categoryId');
+    if (catId) nextParams.set("categoryId", String(catId));
+    else nextParams.delete("categoryId");
     setSearchParams(nextParams);
   };
 
   const handleStatusSelect = (status: string) => {
     setActiveStatus(status);
     const nextParams = new URLSearchParams(searchParams);
-    if (status === 'my') {
+    if (status === "my") {
       if (user?.id) {
-        nextParams.set('userId', String(user.id));
-        nextParams.delete('status');
+        nextParams.set("userId", String(user.id));
+        nextParams.delete("status");
       } else {
-        toast.info('Vui lòng đăng nhập để xem truyện của bạn');
-        navigate('/login');
+        toast.info("Vui lòng đăng nhập để xem truyện của bạn");
+        navigate("/login");
         return;
       }
     } else {
-      nextParams.delete('userId');
-      nextParams.delete('createdBy');
-      if (status && status !== 'all') nextParams.set('status', status);
-      else nextParams.delete('status');
+      nextParams.delete("userId");
+      nextParams.delete("createdBy");
+      if (status && status !== "all") nextParams.set("status", status);
+      else nextParams.delete("status");
     }
     setSearchParams(nextParams);
   };
@@ -123,8 +133,8 @@ export const LibraryPage: React.FC = () => {
 
   const handleResetFilters = () => {
     setActiveCategory(null);
-    setActiveStatus('all');
-    setSearchQuery('');
+    setActiveStatus("all");
+    setSearchQuery("");
     setSearchParams({});
   };
 
@@ -156,7 +166,7 @@ export const LibraryPage: React.FC = () => {
         {searchQuery && (
           <button
             type="button"
-            onClick={() => handleSearchChange('')}
+            onClick={() => handleSearchChange("")}
             className="absolute right-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded flex items-center justify-center border border-black bg-white hover:bg-gray-100 active:translate-x-0.5 active:translate-y-0.5 z-10 text-black"
             title="Xóa tìm kiếm"
           >
@@ -170,7 +180,7 @@ export const LibraryPage: React.FC = () => {
         <button
           onClick={() => handleCategorySelect(null)}
           className={`cat-filter-btn btn-comic text-xs py-1.5 px-3.5 whitespace-nowrap ${
-            !activeCategory ? 'btn-comic-yellow' : 'bg-white'
+            !activeCategory ? "btn-comic-yellow" : "bg-white"
           }`}
         >
           Tất cả
@@ -180,7 +190,7 @@ export const LibraryPage: React.FC = () => {
             key={c.id}
             onClick={() => handleCategorySelect(c.id)}
             className={`cat-filter-btn btn-comic text-xs py-1.5 px-3 whitespace-nowrap ${
-              activeCategory === c.id ? 'btn-comic-yellow' : 'bg-white'
+              activeCategory === c.id ? "btn-comic-yellow" : "bg-white"
             }`}
           >
             {c.name}
@@ -200,8 +210,8 @@ export const LibraryPage: React.FC = () => {
           <button
             onClick={() => {
               const nextParams = new URLSearchParams(searchParams);
-              nextParams.delete('userId');
-              nextParams.delete('createdBy');
+              nextParams.delete("userId");
+              nextParams.delete("createdBy");
               setSearchParams(nextParams);
             }}
             className="text-xs text-red-600 font-bold hover:underline px-1 shrink-0"
@@ -214,51 +224,51 @@ export const LibraryPage: React.FC = () => {
       {/* 3. Status Filter Chips */}
       <div className="card-comic-sm p-1.5 bg-white flex items-center justify-between gap-1 overflow-x-auto no-scrollbar">
         <button
-          onClick={() => handleStatusSelect('all')}
+          onClick={() => handleStatusSelect("all")}
           className={`status-chip flex-1 py-1 px-2 rounded font-extrabold text-[11px] whitespace-nowrap transition-all ${
-            activeStatus === 'all' && !urlUserId
-              ? 'bg-[#FFE600] text-black border border-black shadow-comic-sm'
-              : 'text-gray-700 hover:bg-gray-100'
+            activeStatus === "all" && !urlUserId
+              ? "bg-[#FFE600] text-black border border-black shadow-comic-sm"
+              : "text-gray-700 hover:bg-gray-100"
           }`}
         >
           Tất cả ({uniqueAudios.length})
         </button>
         <button
-          onClick={() => handleStatusSelect('my')}
+          onClick={() => handleStatusSelect("my")}
           className={`status-chip flex-1 py-1 px-2 rounded font-extrabold text-[11px] whitespace-nowrap transition-all ${
             isViewingMyStories
-              ? 'bg-[#FFE600] text-black border border-black shadow-comic-sm'
-              : 'text-gray-700 hover:bg-gray-100'
+              ? "bg-[#FFE600] text-black border border-black shadow-comic-sm"
+              : "text-gray-700 hover:bg-gray-100"
           }`}
         >
-          {user?.id ? `Của tôi ` : 'Của tôi'}
+          {user?.id ? `Của tôi ` : "Của tôi"}
         </button>
         <button
-          onClick={() => handleStatusSelect('listening')}
+          onClick={() => handleStatusSelect("listening")}
           className={`status-chip flex-1 py-1 px-2 rounded font-extrabold text-[11px] whitespace-nowrap transition-all ${
-            activeStatus === 'listening'
-              ? 'bg-[#3A86FF] text-white border border-black shadow-comic-sm'
-              : 'text-gray-700 hover:bg-gray-100'
+            activeStatus === "listening"
+              ? "bg-[#3A86FF] text-white border border-black shadow-comic-sm"
+              : "text-gray-700 hover:bg-gray-100"
           }`}
         >
           Đang cày
         </button>
         <button
-          onClick={() => handleStatusSelect('completed')}
+          onClick={() => handleStatusSelect("completed")}
           className={`status-chip flex-1 py-1 px-2 rounded font-extrabold text-[11px] whitespace-nowrap transition-all ${
-            activeStatus === 'completed'
-              ? 'bg-[#2A9D8F] text-white border border-black shadow-comic-sm'
-              : 'text-gray-700 hover:bg-gray-100'
+            activeStatus === "completed"
+              ? "bg-[#2A9D8F] text-white border border-black shadow-comic-sm"
+              : "text-gray-700 hover:bg-gray-100"
           }`}
         >
           Hoàn thành
         </button>
         <button
-          onClick={() => handleStatusSelect('favorite')}
+          onClick={() => handleStatusSelect("favorite")}
           className={`status-chip flex-1 py-1 px-2 rounded font-extrabold text-[11px] whitespace-nowrap transition-all ${
-            activeStatus === 'favorite'
-              ? 'bg-[#E63946] text-white border border-black shadow-comic-sm'
-              : 'text-gray-700 hover:bg-gray-100'
+            activeStatus === "favorite"
+              ? "bg-[#E63946] text-white border border-black shadow-comic-sm"
+              : "text-gray-700 hover:bg-gray-100"
           }`}
         >
           <i className="ri-heart-3-fill" /> Yêu thích
@@ -294,16 +304,23 @@ export const LibraryPage: React.FC = () => {
       ) : (
         <div className="flex flex-col gap-3" id="lib-audio-list">
           {paginatedAudios.map((a) => {
-            const isCurrentlyPlaying = isPlaying && currentAudio?.id === a.id;
+            const isCurrentlyPlaying = Boolean(isPlaying && currentAudio && String(currentAudio.id) === String(a.id));
             return (
-              <div key={a.id} className="card-comic p-3 flex flex-col gap-2.5 bg-white relative group">
+              <div
+                key={a.id}
+                className="card-comic p-3 flex flex-col gap-2.5 bg-white relative group"
+              >
                 <div className="flex items-start gap-3">
                   {/* Manga Thumbnail */}
                   <div
                     className="relative w-20 h-24 rounded-lg border-2 border-black overflow-hidden shrink-0 bg-black shadow-comic-sm cursor-pointer"
                     onClick={() => navigate(`/player/${a.id}`)}
                   >
-                    <img src={a.thumbnailUrl} alt={a.title} className="w-full h-full object-cover" />
+                    <img
+                      src={a.thumbnailUrl}
+                      alt={a.title}
+                      className="w-full h-full object-cover"
+                    />
                     {isCurrentlyPlaying && (
                       <div className="absolute inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center">
                         <div className="comic-eq-container">
@@ -324,7 +341,7 @@ export const LibraryPage: React.FC = () => {
                       <div className="flex items-center justify-between gap-1">
                         <div className="flex items-center gap-1.5 truncate">
                           <span className="badge-comic badge-comic-blue text-[9px] py-0 px-1.5 font-bold truncate">
-                            {a.categoryName || 'Chung'}
+                            {a.categoryName || "Chung"}
                           </span>
                           {a.isVIPOnly && (
                             <span className="badge-comic badge-comic-purple text-[8px] py-0 px-1 font-black">
@@ -347,7 +364,9 @@ export const LibraryPage: React.FC = () => {
                         >
                           <i
                             className={`${
-                              a.isFavorite ? 'ri-heart-3-fill text-[#E63946]' : 'ri-heart-3-line text-black'
+                              a.isFavorite
+                                ? "ri-heart-3-fill text-[#E63946]"
+                                : "ri-heart-3-line text-black"
                             } text-sm font-bold`}
                           />
                         </button>
@@ -359,26 +378,28 @@ export const LibraryPage: React.FC = () => {
                         {a.title}
                       </h3>
                       <p className="text-[11px] font-semibold text-gray-500 truncate mt-0.5">
-                        Tác giả: {a.author || 'Đang cập nhật'}
+                        Tác giả: {a.author || "Đang cập nhật"}
                       </p>
                     </div>
 
                     <div className="flex items-center justify-between text-xs font-mono font-bold text-gray-700 pt-1 border-t border-gray-200">
-                      <span className="text-[11px]">{a.formattedDuration || '24h 00m'}</span>
+                      <span className="text-[11px]">
+                        {a.formattedDuration || "24h 00m"}
+                      </span>
                       <span
                         className={`badge-comic ${
                           (a.progressPercent || 0) >= 100
-                            ? 'badge-comic-teal'
+                            ? "badge-comic-teal"
                             : (a.progressPercent || 0) > 0
-                            ? 'badge-comic-yellow'
-                            : 'badge-comic-white'
+                              ? "badge-comic-yellow"
+                              : "badge-comic-white"
                         } text-[9px] py-0 px-1`}
                       >
                         {(a.progressPercent || 0) >= 100
-                          ? 'ĐÃ XONG'
+                          ? "ĐÃ XONG"
                           : (a.progressPercent || 0) > 0
-                          ? `${a.progressPercent}%`
-                          : 'CHƯA NGHE'}
+                            ? `${a.progressPercent}%`
+                            : "CHƯA NGHE"}
                       </span>
                     </div>
                   </div>
@@ -387,7 +408,10 @@ export const LibraryPage: React.FC = () => {
                 {/* Progress bar & Action Bar */}
                 <div className="flex items-center justify-between gap-2 pt-2 border-t border-black">
                   <div className="w-full bg-gray-200 h-2 rounded-full border border-black overflow-hidden flex-1 shadow-comic-sm">
-                    <div className="bg-[#3A86FF] h-full" style={{ width: `${a.progressPercent || 0}%` }} />
+                    <div
+                      className="bg-[#3A86FF] h-full"
+                      style={{ width: `${a.progressPercent || 0}%` }}
+                    />
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
@@ -399,26 +423,38 @@ export const LibraryPage: React.FC = () => {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (currentAudio?.id === a.id) {
+                        if (currentAudio && String(currentAudio.id) === String(a.id)) {
                           togglePlay();
                         } else {
-                          const isVipOrAdmin = user?.role === 'VIP' || user?.role === 'ADMIN' || user?.membership === 'VIP';
-                          const isVipAudio = Boolean(a.isVIPOnly || a.isVipOnly);
-                          const totalEps = a.totalEpisodes || a.episodes?.length || 1;
+                          const isVipOrAdmin =
+                            user?.role === "VIP" ||
+                            user?.role === "ADMIN" ||
+                            user?.membership === "VIP";
+                          const isVipAudio = Boolean(
+                            a.isVIPOnly || a.isVipOnly,
+                          );
+                          const totalEps =
+                            a.totalEpisodes || a.episodes?.length || 1;
                           if (isVipAudio && !isVipOrAdmin && totalEps <= 1) {
-                            toast.error('Nội dung này độc quyền dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!');
-                            navigate('/membership');
+                            toast.error(
+                              "Nội dung này độc quyền dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!",
+                            );
+                            navigate("/membership");
                             return;
                           }
                           play(a);
                         }
                       }}
                       className={`btn-comic ${
-                        isCurrentlyPlaying ? 'btn-comic-yellow' : 'btn-comic-primary'
+                        isCurrentlyPlaying
+                          ? "btn-comic-yellow"
+                          : "btn-comic-primary"
                       } text-[11px] py-1 px-3`}
                     >
-                      <i className={`${isCurrentlyPlaying ? 'ri-pause-fill' : 'ri-play-fill'} text-sm font-bold`} />
-                      <span>{isCurrentlyPlaying ? 'Dừng' : 'Cày'}</span>
+                      <i
+                        className={`${isCurrentlyPlaying ? "ri-pause-fill" : "ri-play-fill"} text-sm font-bold`}
+                      />
+                      <span>{isCurrentlyPlaying ? "Dừng" : "Cày"}</span>
                     </button>
                   </div>
                 </div>
@@ -437,11 +473,10 @@ export const LibraryPage: React.FC = () => {
           pageSize={pageSize}
           onPageChange={(p) => {
             setCurrentPage(p);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            window.scrollTo({ top: 0, behavior: "smooth" });
           }}
         />
       )}
     </div>
   );
 };
-

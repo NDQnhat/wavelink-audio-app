@@ -17,15 +17,19 @@ export const progressService = {
 
       // Cập nhật local memory để đồng bộ hiển thị ngay lập tức
       const db = localDb.get();
-      const audio = db.audios.find((a) => a.id === payload.audioId);
+      const audio = db.audios.find((a) => String(a.id) === String(payload.audioId));
       if (audio) {
         audio.lastPositionSeconds = payload.positionSeconds;
         audio.progressPercent = Math.min(100, Math.round(payload.progressPercent));
         audio.formattedPosition = formatTime(payload.positionSeconds);
-        const ep = audio.episodes?.find((e) => e.id === payload.episodeId);
+        audio.currentEpisodeId = payload.episodeId;
+        const ep = audio.episodes?.find((e) => String(e.id) === String(payload.episodeId));
         if (ep) {
+          ep.positionSeconds = payload.positionSeconds;
           ep.progressPercent = Math.min(100, Math.round(payload.progressPercent));
           if (payload.progressPercent >= 95) ep.completed = true;
+          audio.currentEpisodeNumber = ep.episodeNumber;
+          audio.currentEpisodeTitle = ep.title;
         }
         localDb.save();
       }
@@ -45,15 +49,19 @@ export const progressService = {
 
     // Always update local storage
     const db = localDb.get();
-    const audio = db.audios.find((a) => a.id === payload.audioId);
+    const audio = db.audios.find((a) => String(a.id) === String(payload.audioId));
     if (audio) {
       audio.lastPositionSeconds = payload.positionSeconds;
       audio.progressPercent = Math.min(100, Math.round(payload.progressPercent));
       audio.formattedPosition = formatTime(payload.positionSeconds);
-      const ep = audio.episodes?.find((e) => e.id === payload.episodeId);
+      audio.currentEpisodeId = payload.episodeId;
+      const ep = audio.episodes?.find((e) => String(e.id) === String(payload.episodeId));
       if (ep) {
+        ep.positionSeconds = payload.positionSeconds;
         ep.progressPercent = Math.min(100, Math.round(payload.progressPercent));
         if (payload.progressPercent >= 95) ep.completed = true;
+        audio.currentEpisodeNumber = ep.episodeNumber;
+        audio.currentEpisodeTitle = ep.title;
       }
       localDb.save();
     }

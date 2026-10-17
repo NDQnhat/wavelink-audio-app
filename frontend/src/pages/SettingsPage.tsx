@@ -651,13 +651,16 @@ export const SettingsPage: React.FC = () => {
           <p className="text-xs font-semibold text-gray-600">
             Tốc độ này sẽ tự động lưu và áp dụng cho toàn bộ các tập audio khi bạn phát.
           </p>
-          <div className="grid grid-cols-4 gap-2">
-            {[1, 1.25, 1.5, 2].map((s) => (
+          <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+            {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((s) => (
               <button
                 key={s}
-                onClick={() => setPlaybackRate(s, user?.id)}
+                onClick={() => {
+                  setPlaybackRate(s, user?.id);
+                  toast.success(`Đã lưu tốc độ phát mặc định: ${s}x`);
+                }}
                 className={`btn-comic text-xs py-2 font-black ${
-                  playbackRate === s ? 'btn-comic-yellow' : 'bg-gray-100'
+                  Math.abs(playbackRate - s) < 0.05 ? 'btn-comic-yellow ring-2 ring-black' : 'bg-gray-100 hover:bg-gray-200'
                 }`}
               >
                 {s}x

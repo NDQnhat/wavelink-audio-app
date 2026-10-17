@@ -72,7 +72,12 @@ export const PlayerPage: React.FC = () => {
     }
   };
 
-  const isTargetAudioPlaying = Boolean(audio && currentAudio?.id === audio.id);
+  const isTargetAudioPlaying = Boolean(audio && currentAudio && String(currentAudio.id) === String(audio.id));
+
+  const currentTimeRef = React.useRef(currentTime);
+  currentTimeRef.current = currentTime;
+  const currentEpisodeRef = React.useRef(currentEpisode);
+  currentEpisodeRef.current = currentEpisode;
 
   // Đồng bộ trạng thái yêu thích từ query khi dữ liệu audio cập nhật
   React.useEffect(() => {
@@ -89,10 +94,12 @@ export const PlayerPage: React.FC = () => {
     const timer = setInterval(() => {
       setSyncCountdown((prev) => {
         if (prev <= 1) {
-          if (currentTime > 0) {
+          const cTime = currentTimeRef.current;
+          const cEp = currentEpisodeRef.current;
+          if (cTime > 0) {
             setSyncedRecentInfo({
-              position: formatTime(currentTime),
-              epNumber: currentEpisode?.episodeNumber || 1,
+              position: formatTime(cTime),
+              epNumber: cEp?.episodeNumber || 1,
             });
             if (audio?.id) {
               queryClient.invalidateQueries({ queryKey: ['audio'] });
@@ -105,20 +112,20 @@ export const PlayerPage: React.FC = () => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isTargetAudioPlaying, isPlaying, currentTime, currentEpisode, audio?.id, queryClient]);
+  }, [isTargetAudioPlaying, isPlaying, audio?.id, queryClient]);
 
   const handleManualSyncRecent = () => {
-    if (currentTime > 0) {
-      setSyncedRecentInfo({
-        position: formatTime(currentTime),
-        epNumber: currentEpisode?.episodeNumber || 1,
-      });
-      if (audio?.id) {
-        queryClient.invalidateQueries({ queryKey: ['audio'] });
-      }
-      setSyncCountdown(60);
-      toast.success('Đã đồng bộ mốc nghe gần nhất!');
+    const cTime = currentTimeRef.current > 0 ? currentTimeRef.current : (audio?.lastPositionSeconds || 0);
+    const epNum = currentEpisodeRef.current?.episodeNumber || audio?.currentEpisodeNumber || 1;
+    setSyncedRecentInfo({
+      position: formatTime(cTime),
+      epNumber: epNum,
+    });
+    if (audio?.id) {
+      queryClient.invalidateQueries({ queryKey: ['audio'] });
     }
+    setSyncCountdown(60);
+    toast.success('Đã đồng bộ mốc nghe gần nhất!');
   };
 
   if (isLoading) {
@@ -312,7 +319,7 @@ export const PlayerPage: React.FC = () => {
 
           <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between text-white z-10">
             <span className="badge-comic badge-comic-yellow text-[10px] text-black">
-              TẬP {String(activeEp.episodeNumber || 1).padStart(2, '0')}: {activeEp.title}
+              TẬP {String(activeEp.episodeNumber || 1).padStart(2, '0')}:  {currentPercent}%
             </span>
           </div>
         </div>
@@ -356,16 +363,17 @@ export const PlayerPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-extrabold uppercase text-gray-700">Mốc nghe gần nhất</span>
               <button
+                type="button"
                 onClick={handleManualSyncRecent}
                 className="badge-comic badge-comic-yellow text-[9px] font-mono shrink-0 flex items-center gap-1 cursor-pointer hover:bg-yellow-200 active:scale-95 transition-all shadow-[1px_1px_0_#000]"
                 title="Đang đếm ngược để đồng bộ mốc nghe. Chạm để đồng bộ ngay!"
               >
                 <i className={`ri-refresh-line text-[9px] ${isTargetAudioPlaying && isPlaying ? 'animate-spin' : ''}`} />
-                SYNC: {syncCountdown}s
+                SYNC: {isTargetAudioPlaying && isPlaying ? `${syncCountdown}s` : '60s'}
               </button>
             </div>
-            <span className="text-xs font-bold text-black truncate">
-              Tiếp tục từ <strong>{syncedRecentInfo?.position || audio.formattedPosition || '00:00:00'}</strong> (Tập {syncedRecentInfo?.epNumber || audio.currentEpisodeNumber || 1})
+            <span className="text-xs font-bold text-black truncate flex items-center gap-1">
+              Tiếp tục từ <strong>{syncedRecentInfo?.position || (isTargetAudioPlaying && currentTime > 0 ? formatTime(currentTime) : (audio.formattedPosition || '00:00:00'))}</strong>:(Tập {syncedRecentInfo?.epNumber || (isTargetAudioPlaying && currentEpisode ? currentEpisode.episodeNumber : (audio.currentEpisodeNumber || 1))})<span className="text-[10px] font-mono"> {currentPercent}% </span> 
             </span>
           </div>
         </div>
@@ -434,7 +442,7 @@ export const PlayerPage: React.FC = () => {
           <div className="flex items-center justify-between font-mono text-xs font-bold text-gray-700">
             <span>{formatTime(currentPosition)}</span>
             <span className={`badge-comic ${isSeekLocked ? 'badge-comic-red' : 'badge-comic-yellow'} text-[9px] py-0 px-1 font-mono`}>
-              {isSeekLocked ? '🔒 ĐÃ KHÓA TUA' : `Đã nghe ${currentPercent}%`}
+              {isSeekLocked ? 'ĐÃ KHÓA TUA' : `Đã nghe ${currentPercent}%`}
             </span>
             <span>{formatTime(episodeDuration)}</span>
           </div>

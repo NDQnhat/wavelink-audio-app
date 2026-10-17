@@ -65,6 +65,10 @@ export const YouTubeEngineHost: React.FC = () => {
           onReady: () => {
             playerRef.current = player;
             setYtInstance(player, instanceId);
+            const targetRate = usePlayerStore.getState().playbackRate || 1.0;
+            if (targetRate !== 1.0) {
+              rateCoordinator.setDesiredRate(targetRate, 'player_onReady_restore');
+            }
           },
           onStateChange: (event: { data: number }) => {
             const state = event.data;
@@ -80,6 +84,10 @@ export const YouTubeEngineHost: React.FC = () => {
 
             if (state === window.YT?.PlayerState?.PLAYING) {
               usePlayerStore.setState({ isPlaying: true, isSeeking: false });
+              const targetRate = usePlayerStore.getState().playbackRate || 1.0;
+              if (targetRate !== 1.0) {
+                rateCoordinator.applyRate('video_playing_enforce');
+              }
             } else if (state === window.YT?.PlayerState?.PAUSED) {
               const currentStore = usePlayerStore.getState();
               // Nếu người dùng không chủ động bấm pause (mà do tab bị ẩn, thoát app, tắt màn hình)

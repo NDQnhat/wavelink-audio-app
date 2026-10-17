@@ -149,7 +149,7 @@ export const HomePage: React.FC = () => {
               style={{ transform: `translateX(-${heroIndex * 100}%)` }}
             >
               {top3Audios.map((audio, idx) => {
-                const isThisPlaying = isPlaying && playingAudio?.id === audio.id;
+                const isThisPlaying = Boolean(isPlaying && playingAudio && String(playingAudio.id) === String(audio.id));
                 const currentStoreEp = usePlayerStore.getState().currentEpisode;
                 const activeEp =
                   isThisPlaying && currentStoreEp
@@ -179,7 +179,7 @@ export const HomePage: React.FC = () => {
 
                 const handlePlay = (e: React.MouseEvent) => {
                   e.stopPropagation();
-                  if (playingAudio?.id === audio.id) {
+                  if (playingAudio && String(playingAudio.id) === String(audio.id)) {
                     togglePlay();
                   } else {
                     const isVipOrAdmin = user?.role === 'VIP' || user?.role === 'ADMIN' || user?.membership === 'VIP';

@@ -7,6 +7,8 @@ import { useAuthStore } from '@/stores/authStore';
 import { toast } from '@/components/ui/Toast';
 import { startBackgroundAudio, stopBackgroundAudio } from '@/lib/backgroundAudioKeeper';
 import { startBackgroundSleepTimer, stopBackgroundSleepTimer } from '@/lib/sleepTimerWorker';
+import { queryClient } from '@/lib/queryClient';
+import { formatTime } from '@/lib/utils';
 
 // Global YouTube Player instance reference
 declare global {
@@ -34,29 +36,39 @@ let lastSpeedChangeTimestamp = 0;
 let lastSpeedChangeUserId: number | string | null = null;
 
 export function setCurrentPlayerUserId(userId?: number | string | null) {
-  currentPlayerUserId = userId || null;
+  currentPlayerUserId = userId !== undefined ? userId : null;
 }
 
 export function getStoredPlaybackRate(userId?: number | string | null): number {
   if (typeof localStorage === 'undefined') return 1.0;
   try {
+    const targetId = userId !== undefined && userId !== null ? userId : currentPlayerUserId;
+    if (targetId !== undefined && targetId !== null) {
+      const userSaved = localStorage.getItem(`comic_audio_user_speed_${targetId}`);
+      if (userSaved) {
+        const parsed = parseFloat(userSaved);
+        if (!isNaN(parsed) && parsed > 0) return parsed;
+      }
+    }
     const currentSaved = localStorage.getItem('comic_audio_current_speed');
     if (currentSaved) {
       const parsed = parseFloat(currentSaved);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    const defaultSaved = localStorage.getItem('wavelink_default_playback_rate');
+    if (defaultSaved) {
+      const parsed = parseFloat(defaultSaved);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    const wavelinkSaved = localStorage.getItem('wavelink_playback_rate');
+    if (wavelinkSaved) {
+      const parsed = parseFloat(wavelinkSaved);
       if (!isNaN(parsed) && parsed > 0) return parsed;
     }
     const globalSaved = localStorage.getItem('comic_audio_preferred_playback_rate');
     if (globalSaved) {
       const parsed = parseFloat(globalSaved);
       if (!isNaN(parsed) && parsed > 0) return parsed;
-    }
-    const targetId = userId || currentPlayerUserId;
-    if (targetId) {
-      const userSaved = localStorage.getItem(`comic_audio_user_speed_${targetId}`);
-      if (userSaved) {
-        const parsed = parseFloat(userSaved);
-        if (!isNaN(parsed) && parsed > 0) return parsed;
-      }
     }
   } catch {}
   return 1.0;
@@ -68,8 +80,10 @@ export function persistUserPlaybackRate(rate: number, userId?: number | string |
     const rateStr = String(rate);
     localStorage.setItem('comic_audio_preferred_playback_rate', rateStr);
     localStorage.setItem('comic_audio_current_speed', rateStr);
-    const targetId = userId || currentPlayerUserId;
-    if (targetId) {
+    localStorage.setItem('wavelink_default_playback_rate', rateStr);
+    localStorage.setItem('wavelink_playback_rate', rateStr);
+    const targetId = userId !== undefined && userId !== null ? userId : currentPlayerUserId;
+    if (targetId !== undefined && targetId !== null) {
       localStorage.setItem(`comic_audio_user_speed_${targetId}`, rateStr);
     }
   } catch {}
@@ -161,6 +175,47 @@ interface PlayerState {
 const initialStoredRate = getStoredPlaybackRate();
 rateCoordinator.setDesiredRate(initialStoredRate, 'store_module_init');
 
+function getInitialSleepTimer(): { minutes: number | null; endTimestamp: number | null } {
+  if (typeof localStorage === 'undefined') return { minutes: null, endTimestamp: null };
+  try {
+    const savedEnd = localStorage.getItem('wavelink_sleep_timer_end');
+    if (savedEnd) {
+      const endTs = parseInt(savedEnd, 10);
+      const remainingMs = endTs - Date.now();
+      if (!isNaN(endTs) && remainingMs > 0) {
+        const remainingMinutes = Math.max(1, Math.round(remainingMs / 60000));
+        return { minutes: remainingMinutes, endTimestamp: endTs };
+      } else {
+        localStorage.removeItem('wavelink_sleep_timer_end');
+      }
+    }
+  } catch {}
+  return { minutes: null, endTimestamp: null };
+}
+
+const initialSleepTimer = getInitialSleepTimer();
+
+if (initialSleepTimer.endTimestamp) {
+  const onExpire = () => {
+    const store = usePlayerStore.getState();
+    if (sleepTimeout) {
+      clearTimeout(sleepTimeout);
+      sleepTimeout = null;
+    }
+    stopBackgroundSleepTimer();
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('wavelink_sleep_timer_end');
+    }
+    usePlayerStore.setState({ sleepTimerMinutes: null, sleepTimerEndTimestamp: null });
+    store.pause();
+    stopBackgroundAudio();
+    toast.info('Đã tự động tắt audio theo hẹn giờ ngủ.');
+  };
+  const delayMs = Math.max(0, initialSleepTimer.endTimestamp - Date.now());
+  sleepTimeout = setTimeout(onExpire, delayMs);
+  startBackgroundSleepTimer(initialSleepTimer.endTimestamp, onExpire);
+}
+
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentAudio: null,
   currentEpisode: null,
@@ -172,8 +227,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   confirmedPlaybackRate: initialStoredRate,
   rateSyncStatus: 'synced',
   isYtReady: false,
-  sleepTimerMinutes: null,
-  sleepTimerEndTimestamp: null,
+  sleepTimerMinutes: initialSleepTimer.minutes,
+  sleepTimerEndTimestamp: initialSleepTimer.endTimestamp,
   isSeeking: false,
 
   setYtReady: (isYtReady: boolean) => set({ isYtReady }),
@@ -484,42 +539,20 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   syncUserPlaybackRate: (userId?: number | string | null) => {
-    if (!userId) return;
-    const prevUserId = currentPlayerUserId;
-    currentPlayerUserId = userId;
-
-    const isDifferentUser = prevUserId !== null && prevUserId !== undefined && prevUserId !== userId;
-
-    // 1. Nếu người dùng vừa chủ động chọn tốc độ trong vòng 10 giây qua:
-    const isRecentManualChange = Date.now() - lastSpeedChangeTimestamp < 10000;
-    if (isRecentManualChange && !isDifferentUser) {
-      const activeRate = get().playbackRate || 1.0;
-      persistUserPlaybackRate(activeRate, userId);
-      return;
+    const targetUserId = userId !== undefined ? userId : currentPlayerUserId;
+    if (targetUserId !== undefined && targetUserId !== null) {
+      currentPlayerUserId = targetUserId;
     }
 
-    const userKey = `comic_audio_user_speed_${userId}`;
-    const userSaved = typeof localStorage !== 'undefined' ? localStorage.getItem(userKey) : null;
-    if (userSaved) {
-      const parsed = parseFloat(userSaved);
-      if (!isNaN(parsed) && parsed > 0) {
-        // Nếu user này có lưu tốc độ riêng khác 1.0x, HOẶC nếu đây là chuyển đổi rõ ràng giữa 2 user khác nhau:
-        if (parsed !== 1.0 || isDifferentUser) {
-          rateCoordinator.setDesiredRate(parsed, 'user_account_sync');
-          set({
-            playbackRate: parsed,
-            confirmedPlaybackRate: rateCoordinator.getConfirmedRate(),
-            rateSyncStatus: rateCoordinator.getSyncStatus(),
-          });
-          return;
-        }
-      }
-    }
+    const effectiveRate = getStoredPlaybackRate(targetUserId);
 
-    // Nếu tài khoản này chưa có cấu hình tốc độ riêng (hoặc chỉ là 1.0 mặc định),
-    // thừa kế tốc độ đang hoạt động hiện có thay vì ép hạ về 1.0x
-    const activeRate = get().playbackRate || getStoredPlaybackRate() || 1.0;
-    persistUserPlaybackRate(activeRate, userId);
+    rateCoordinator.setDesiredRate(effectiveRate, 'user_account_sync');
+    set({
+      playbackRate: effectiveRate,
+      confirmedPlaybackRate: rateCoordinator.getConfirmedRate(),
+      rateSyncStatus: rateCoordinator.getSyncStatus(),
+    });
+    persistUserPlaybackRate(effectiveRate, targetUserId);
   },
 
   cycleSpeed: (userId?: number | string | null) => {
@@ -572,7 +605,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   close: () => {
-    saveCurrentProgress();
+    const { currentAudio, currentEpisode, duration } = get();
+    let currentPos = get().currentTime;
+    if (ytPlayerInstance && typeof ytPlayerInstance.getCurrentTime === 'function') {
+      try {
+        const absTime = ytPlayerInstance.getCurrentTime();
+        const startSec = currentEpisode?.startSeconds || 0;
+        const epPos = Math.round(absTime - startSec);
+        if (epPos >= 0) {
+          currentPos = epPos;
+        }
+      } catch {}
+    }
+
+    if (currentAudio && currentEpisode) {
+      saveProgressFor(currentAudio, currentEpisode, currentPos, duration);
+    }
+
     if (ytPlayerInstance) {
       try {
         ytPlayerInstance.pauseVideo();
@@ -596,7 +645,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentEpisode: null,
       isPlaying: false,
       isExplicitlyPaused: true,
-      currentTime: 0,
+      currentTime: currentPos,
       sleepTimerMinutes: null,
       sleepTimerEndTimestamp: null,
     });
@@ -823,6 +872,17 @@ function saveProgressFor(audio: AudioItem, episode: Episode, currentTime: number
   const percent = Math.min(100, Math.round((currentTime / dur) * 100));
   const isCompleted = percent >= 95;
 
+  // Cập nhật ngay các trường của audio và episode trong bộ nhớ để giao diện đồng bộ tức thì
+  audio.lastPositionSeconds = currentTime;
+  audio.progressPercent = percent;
+  audio.formattedPosition = formatTime(currentTime);
+  audio.currentEpisodeId = episode.id;
+  audio.currentEpisodeNumber = episode.episodeNumber;
+  audio.currentEpisodeTitle = episode.title;
+  episode.positionSeconds = currentTime;
+  episode.progressPercent = percent;
+  if (isCompleted) episode.completed = true;
+
   api.progress.updateProgress({
     audioId: audio.id,
     episodeId: episode.id,
@@ -841,6 +901,13 @@ function saveProgressFor(audio: AudioItem, episode: Episode, currentTime: number
       durationListened: accumulatedDuration,
     });
   }
+
+  // Đồng bộ React Query cache
+  try {
+    queryClient.invalidateQueries({ queryKey: ['audios'] });
+    queryClient.invalidateQueries({ queryKey: ['audio'] });
+    queryClient.invalidateQueries({ queryKey: ['history'] });
+  } catch {}
 }
 
 function saveCurrentProgress() {

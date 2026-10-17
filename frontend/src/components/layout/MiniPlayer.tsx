@@ -22,6 +22,8 @@ export const MiniPlayer: React.FC = () => {
   if (!currentAudio) return null;
 
   const percent = Math.min(100, Math.round((currentTime / (duration || 14400)) * 100));
+  
+
 
   const handleOpenDetail = () => {
     navigate(`/player/${currentAudio.id}`);
@@ -54,7 +56,7 @@ export const MiniPlayer: React.FC = () => {
       <div className="flex flex-col min-w-0 flex-1 cursor-pointer" onClick={handleOpenDetail}>
         <div className="flex items-center gap-1.5 mb-0.5">
           <span className="badge-comic badge-comic-yellow text-[9px] py-0 px-1 font-black">
-            TẬP {String(currentEpisode?.episodeNumber || 1).padStart(2, '0')}
+            TẬP {String(currentEpisode?.episodeNumber || 1).padStart(2, '0')}: {percent}%
           </span>
           {isPlaying ? (
             <span className="text-[10px] font-black text-[#3A86FF] uppercase tracking-wider flex items-center gap-1">

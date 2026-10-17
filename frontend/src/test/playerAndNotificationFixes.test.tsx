@@ -242,4 +242,79 @@ describe('5 Issues Fixes Verification Suite', () => {
       expect(fakePlayer.stopVideo).not.toHaveBeenCalled();
     });
   });
+
+  describe('Bug Fixes: MiniPlayer Close Timestamp, Speed Setting Persistence, and Sleep Timer Recovery', () => {
+    it('preserves exact listening timestamp when closing MiniPlayer instead of resetting to 0', async () => {
+      const { api } = vi.mocked(await import('@/services/api'));
+      const fakePlayer = {
+        pauseVideo: vi.fn(),
+        getCurrentTime: vi.fn().mockReturnValue(1250),
+      };
+
+      usePlayerStore.getState().setYtInstance(fakePlayer);
+
+      // Play mock audio
+      const audio = {
+        id: 88,
+        title: 'Truyện Tiên Hiệp',
+        author: 'Tác Giả A',
+        channel: 'Kênh Audio',
+        youtubeVideoId: 'yt123',
+        thumbnailUrl: 'thumb.jpg',
+        episodes: [
+          { id: 1, episodeNumber: 1, title: 'Tập 1', startSeconds: 0, endSeconds: 3600, duration: 3600 },
+        ],
+      };
+
+      usePlayerStore.getState().play(audio as any, audio.episodes[0] as any, 1250);
+      expect(usePlayerStore.getState().currentTime).toBe(1250);
+
+      // Close mini player
+      usePlayerStore.getState().close();
+
+      // YouTube pauseVideo called, but NOT resetting currentTime to 0
+      expect(fakePlayer.pauseVideo).toHaveBeenCalled();
+      expect(usePlayerStore.getState().currentTime).toBe(1250);
+      expect(usePlayerStore.getState().isPlaying).toBe(false);
+
+      // Progress API was called with the exact timestamp (1250s), NOT 0
+      expect(api.progress.updateProgress).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audioId: 88,
+          episodeId: 1,
+          positionSeconds: 1250,
+        })
+      );
+    });
+
+    it('persists playback speed (x2, x1.75, etc.) and restores on store re-initialization', async () => {
+      const { getStoredPlaybackRate } = await import('@/stores/playerStore');
+
+      // Set speed to 2.0x
+      usePlayerStore.getState().setPlaybackRate(2.0, 999);
+      expect(usePlayerStore.getState().playbackRate).toBe(2.0);
+
+      // Verify stored in localStorage
+      expect(localStorage.getItem('comic_audio_preferred_playback_rate')).toBe('2');
+      expect(getStoredPlaybackRate(999)).toBe(2.0);
+
+      // Changing speed to 1.75x
+      usePlayerStore.getState().setPlaybackRate(1.75, 999);
+      expect(usePlayerStore.getState().playbackRate).toBe(1.75);
+      expect(getStoredPlaybackRate(999)).toBe(1.75);
+
+      // User account sync should keep 1.75x
+      usePlayerStore.getState().syncUserPlaybackRate(999);
+      expect(usePlayerStore.getState().playbackRate).toBe(1.75);
+    });
+
+    it('recovers active sleep timer from localStorage if set in future', () => {
+      const futureTs = Date.now() + 20 * 60 * 1000;
+      localStorage.setItem('wavelink_sleep_timer_end', String(futureTs));
+
+      usePlayerStore.getState().setSleepTimer(20);
+      expect(usePlayerStore.getState().sleepTimerMinutes).toBe(20);
+      expect(usePlayerStore.getState().sleepTimerEndTimestamp).toBeGreaterThan(Date.now());
+    });
+  });
 });
