@@ -755,18 +755,12 @@ function startPolling() {
 }
 
 let watchdogDesyncCounter = 0;
-let lastProgressionWallTime = 0;
-let lastProgressionVideoTime = 0;
-let hardwareProgressionLagCounter = 0;
 let mediaSessionSyncCounter = 0;
 
 function pollIntervalHandler() {
   const store = usePlayerStore.getState();
   if (!store.isPlaying) {
     watchdogDesyncCounter = 0;
-    lastProgressionWallTime = 0;
-    lastProgressionVideoTime = 0;
-    hardwareProgressionLagCounter = 0;
     return;
   }
 
@@ -809,35 +803,8 @@ function pollIntervalHandler() {
           watchdogDesyncCounter = 0;
         }
 
-        // 2. Hardware Progression Watchdog: Đo tiến độ thực tế theo thời gian thực (wall clock delta)
-        // để phát hiện trường hợp decoder phần cứng trên mobile bị reset về 1.0x dù getPlaybackRate trả về 2.0x
-        const currentAbs = ytPlayerInstance.getCurrentTime();
-        if (lastProgressionWallTime > 0 && lastProgressionVideoTime > 0 && !store.isSeeking) {
-          const deltaWall = (now - lastProgressionWallTime) / 1000;
-          const deltaVideo = currentAbs - lastProgressionVideoTime;
-          if (targetRate > 1.05 && deltaWall >= 1.5 && deltaWall <= 3.5 && deltaVideo > 0) {
-            const measuredRate = deltaVideo / deltaWall;
-            if (measuredRate < targetRate * 0.75) {
-              hardwareProgressionLagCounter++;
-              if (hardwareProgressionLagCounter >= 2) {
-                hardwareProgressionLagCounter = 0;
-                console.debug(
-                  `[PlayerStore] Hardware progression lag detected (${measuredRate.toFixed(2)}x vs expected ${targetRate}x). Enforcing rate...`
-                );
-                rateCoordinator.enforceRateWithRetries(targetRate, 'watchdog_hardware_progression_lag');
-              }
-            } else {
-              hardwareProgressionLagCounter = 0;
-            }
-          }
-        }
-        lastProgressionWallTime = now;
-        lastProgressionVideoTime = currentAbs;
       } else {
         watchdogDesyncCounter = 0;
-        lastProgressionWallTime = 0;
-        lastProgressionVideoTime = 0;
-        hardwareProgressionLagCounter = 0;
       }
     } catch {}
 

@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { usePlayerStore } from '@/stores/playerStore';
 import { rateCoordinator } from '@/lib/playbackRateCoordinator';
 import { toast } from '@/components/ui/Toast';
-import { startBackgroundAudio } from '@/lib/backgroundAudioKeeper';
+import { startBackgroundAudio, stopBackgroundAudio } from '@/lib/backgroundAudioKeeper';
 
 export const YouTubeEngineHost: React.FC = () => {
   const setYtInstance = usePlayerStore((s) => s.setYtInstance);
@@ -90,25 +90,28 @@ export const YouTubeEngineHost: React.FC = () => {
 
             if (state === window.YT?.PlayerState?.PLAYING) {
               usePlayerStore.setState({ isPlaying: true, isSeeking: false });
+              if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = 'playing';
+              }
               const targetRate = usePlayerStore.getState().playbackRate || 1.0;
-              if (targetRate !== 1.0) {
+              const actualRate = playerRef.current?.getPlaybackRate?.();
+              if (targetRate !== 1.0 && actualRate !== targetRate) {
                 rateCoordinator.enforceRateWithRetries(targetRate, 'video_playing_enforce');
               }
             } else if (state === window.YT?.PlayerState?.PAUSED) {
               const currentStore = usePlayerStore.getState();
+              // Đồng bộ MediaSession sang 'paused' để Màn hình khóa (Lock Screen) và Action Center
+              // ngay lập tức hiển thị nút PLAY (▶), cho phép người dùng bấm tiếp tục nghe khi tắt màn hình
+              if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = 'paused';
+              }
+
               // Nếu người dùng không chủ động bấm pause (mà do tab bị ẩn, thoát app, tắt màn hình)
               if (currentStore.isPlaying && !currentStore.isExplicitlyPaused) {
-                console.debug('[YouTubeEngineHost] Background interruption detected. Resuming playback...');
+                console.debug('[YouTubeEngineHost] Background interruption detected. Readying lockscreen resume...');
                 try {
                   playerRef.current?.playVideo();
                 } catch {}
-                setTimeout(() => {
-                  if (playerRef.current && usePlayerStore.getState().isPlaying && !usePlayerStore.getState().isExplicitlyPaused) {
-                    try {
-                      playerRef.current.playVideo();
-                    } catch {}
-                  }
-                }, 100);
               } else {
                 usePlayerStore.setState({ isPlaying: false });
               }
@@ -162,10 +165,22 @@ export const YouTubeEngineHost: React.FC = () => {
       }, 100);
     }
 
-    // 3. Listener duy trì phát audio và cưỡng chế tốc độ khi ẩn tab / chuyển app / quay lại app
+    // 3. Listener duy trì phát audio, kiểm tra hẹn giờ ngủ và cưỡng chế tốc độ khi ẩn tab / chuyển app / quay lại app
     const handleVisibilityChange = () => {
       const store = usePlayerStore.getState();
       const desiredRate = store.playbackRate || 1.0;
+
+      // Kiểm tra ngay sleep timer khi app hiển thị lại hoặc chuyển trạng thái
+      if (store.sleepTimerEndTimestamp && Date.now() >= store.sleepTimerEndTimestamp) {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem('wavelink_sleep_timer_end');
+        }
+        usePlayerStore.setState({ sleepTimerMinutes: null, sleepTimerEndTimestamp: null });
+        store.pause();
+        stopBackgroundAudio();
+        toast.info('Đã tự động tắt audio theo hẹn giờ ngủ.');
+        return;
+      }
 
       if (document.hidden) {
         // App / Tab chuyển sang chạy nền
@@ -187,8 +202,9 @@ export const YouTubeEngineHost: React.FC = () => {
             }
           } catch {}
         }
-        // Cưỡng chế áp dụng lại tốc độ đã chọn ngay khi app hiển thị lại
-        if (desiredRate !== 1.0) {
+        // Chỉ cưỡng chế áp dụng lại tốc độ nếu thực sự bị lệch tốc độ
+        const currentYtRate = playerRef.current?.getPlaybackRate?.();
+        if (desiredRate !== 1.0 && currentYtRate !== desiredRate) {
           rateCoordinator.enforceRateWithRetries(desiredRate, 'app_foreground_visibility');
         }
       }
@@ -197,6 +213,18 @@ export const YouTubeEngineHost: React.FC = () => {
     const handleWindowFocus = () => {
       const store = usePlayerStore.getState();
       const desiredRate = store.playbackRate || 1.0;
+
+      if (store.sleepTimerEndTimestamp && Date.now() >= store.sleepTimerEndTimestamp) {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem('wavelink_sleep_timer_end');
+        }
+        usePlayerStore.setState({ sleepTimerMinutes: null, sleepTimerEndTimestamp: null });
+        store.pause();
+        stopBackgroundAudio();
+        toast.info('Đã tự động tắt audio theo hẹn giờ ngủ.');
+        return;
+      }
+
       if (store.isPlaying && !store.isExplicitlyPaused && playerRef.current) {
         try {
           const ytState = playerRef.current.getPlayerState?.();
@@ -205,7 +233,8 @@ export const YouTubeEngineHost: React.FC = () => {
           }
         } catch {}
       }
-      if (desiredRate !== 1.0) {
+      const currentYtRate = playerRef.current?.getPlaybackRate?.();
+      if (desiredRate !== 1.0 && currentYtRate !== desiredRate) {
         rateCoordinator.enforceRateWithRetries(desiredRate, 'app_foreground_focus');
       }
     };

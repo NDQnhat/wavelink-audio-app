@@ -182,8 +182,9 @@ export class PlaybackRateCoordinator {
     });
 
     if (isMatch) {
-      // Đã xác nhận khớp tốc độ mong muốn
+      // Đã xác nhận khớp tốc độ mong muốn: xóa ngay mọi retry đang chờ để tránh méo tiếng / rè âm thanh
       this.syncStatus = 'synced';
+      this.clearPendingRetries();
     } else {
       // YouTube chỉ tự ý reset về 1.0 trong lúc phát hoặc chuyển app:
       // Tự động cưỡng chế lại tốc độ mong muốn của người dùng ngay lập tức
@@ -218,16 +219,15 @@ export class PlaybackRateCoordinator {
       try {
         if (!this.player || typeof this.player.setPlaybackRate !== 'function') return;
 
-        // Nếu YouTube player khai báo đã ở targetRate nhưng chúng ta đang cần cưỡng chế lại (do lag/foreground),
-        // đảo về 1.0 trước trong cùng tick để phá vỡ cache nội bộ của YouTube IFrame JS
+        // Nếu YouTube player đã ở đúng tốc độ targetRate thì dừng ngay, tránh gọi lại gây rè / méo tiếng
         if (
           typeof this.player.getPlaybackRate === 'function' &&
-          this.player.getPlaybackRate() === targetRate &&
-          targetRate !== 1.0
+          Math.abs(this.player.getPlaybackRate() - targetRate) <= 0.05
         ) {
-          try {
-            this.player.setPlaybackRate(1.0);
-          } catch {}
+          this.confirmedRate = targetRate;
+          this.syncStatus = 'synced';
+          this.clearPendingRetries();
+          return;
         }
 
         this.player.setPlaybackRate(targetRate);
@@ -249,8 +249,8 @@ export class PlaybackRateCoordinator {
     // Áp dụng ngay
     doSetRate(`${reason}_immediate`);
 
-    // Bắt buộc retry định kỳ (150ms, 400ms, 800ms, 1500ms, 2500ms) để đối phó với độ trễ audio decoder mobile
-    const delays = [150, 400, 800, 1500, 2500];
+    // Retry an toàn 3 nấc (150ms, 400ms, 800ms) - sẽ tự hủy ngay khi YouTube xác nhận khớp rate
+    const delays = [150, 400, 800];
     delays.forEach((delay, idx) => {
       const t = setTimeout(() => {
         doSetRate(`${reason}_delay_${delay}ms_${idx + 1}`);
