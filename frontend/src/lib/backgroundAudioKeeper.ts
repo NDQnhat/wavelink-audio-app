@@ -1,66 +1,15 @@
 /**
  * backgroundAudioKeeper.ts
  * Duy trì tiến trình âm thanh nền (Background Audio Session) cho WaveLink khi thoát app / chuyển tab / tắt màn hình.
- * - Trên Mobile (iOS / Android): Sử dụng HTML5 Audio loop 5 giây âm thanh im lặng (PCM WAV) để giữ Audio Session không bị OS đóng băng.
- * - Trên Desktop: Sử dụng Web Audio API AudioContext để giữ luồng âm thanh mà không kích hoạt thông báo "video đã phát xong".
+ * - Sử dụng Web Audio API AudioContext tạo luồng âm thanh im lặng (silent audio buffer) ở mức gain 0.
+ * - Giữ audio subsystem và tiến trình của trình duyệt/ứng dụng hoạt động liên tục mà KHÔNG chiếm dụng Audio Session
+ *   hoặc ngắt tiếng của YouTube Video IFrame (đặc biệt trên iOS Safari & Android Chrome).
+ * - Dọn dẹp triệt để bất kỳ thẻ HTML5 <audio> nào trong DOM để tránh lỗi phát sinh toast ngoài "video đã phát xong".
  */
 
 let silentAudioCtx: AudioContext | null = null;
 let silentSource: AudioBufferSourceNode | null = null;
-let mobileAudioElement: HTMLAudioElement | null = null;
-let silentBlobUrl: string | null = null;
 let isRunning = false;
-
-function checkIsMobile(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  return /iPhone|iPad|iPod|Android|Mobile/i.test(navigator.userAgent);
-}
-
-function writeAscii(view: DataView, offset: number, str: string) {
-  for (let i = 0; i < str.length; i++) {
-    view.setUint8(offset + i, str.charCodeAt(i));
-  }
-}
-
-function getOrCreateSilentBlobUrl(): string | null {
-  if (silentBlobUrl) return silentBlobUrl;
-  if (typeof Blob === 'undefined' || typeof URL === 'undefined') return null;
-
-  try {
-    const sampleRate = 8000;
-    const numSamples = sampleRate * 5; // 5 giây âm thanh im lặng
-    const buffer = new ArrayBuffer(44 + numSamples);
-    const view = new DataView(buffer);
-
-    // RIFF chunk
-    writeAscii(view, 0, 'RIFF');
-    view.setUint32(4, 36 + numSamples, true);
-    writeAscii(view, 8, 'WAVE');
-
-    // fmt sub-chunk
-    writeAscii(view, 12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); // PCM
-    view.setUint16(22, 1, true); // Mono
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate, true);
-    view.setUint16(32, 1, true);
-    view.setUint16(34, 8, true);
-
-    // data sub-chunk
-    writeAscii(view, 36, 'data');
-    view.setUint32(40, numSamples, true);
-
-    const bytes = new Uint8Array(buffer, 44, numSamples);
-    bytes.fill(128); // 8-bit PCM neutral line (silence)
-
-    const blob = new Blob([buffer], { type: 'audio/wav' });
-    silentBlobUrl = URL.createObjectURL(blob);
-    return silentBlobUrl;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Kích hoạt phiên phát âm thanh nền
@@ -68,47 +17,20 @@ function getOrCreateSilentBlobUrl(): string | null {
 export function startBackgroundAudio(): void {
   if (typeof window === 'undefined') return;
 
-  // Xóa sạch thẻ audio anchor cũ nếu có trong DOM (tránh gây lỗi hiển thị toast video đã phát xong)
+  // Xóa sạch mọi thẻ audio anchor/mobile audio thừa trong DOM (tránh gây gián đoạn âm thanh hoặc lỗi hiển thị toast)
   if (typeof document !== 'undefined') {
     const legacyAnchor = document.getElementById('wavelink-bg-audio-anchor');
     if (legacyAnchor) {
       legacyAnchor.remove();
     }
-  }
-
-  // 1. Mobile background audio keeper (iOS Safari / Android Chrome)
-  if (checkIsMobile()) {
-    const url = getOrCreateSilentBlobUrl();
-    if (url && typeof document !== 'undefined') {
-      try {
-        if (!mobileAudioElement) {
-          const audio = document.createElement('audio');
-          audio.id = 'wavelink-mobile-bg-audio';
-          audio.src = url;
-          audio.loop = true;
-          audio.setAttribute('playsinline', 'true');
-          audio.setAttribute('webkit-playsinline', 'true');
-          audio.volume = 0.01;
-          audio.style.position = 'fixed';
-          audio.style.left = '-9999px';
-          audio.style.width = '1px';
-          audio.style.height = '1px';
-          audio.style.opacity = '0';
-          audio.style.pointerEvents = 'none';
-          document.body.appendChild(audio);
-          mobileAudioElement = audio;
-        }
-        const playPromise = mobileAudioElement.play();
-        if (playPromise !== undefined && typeof playPromise.catch === 'function') {
-          playPromise.catch(() => {});
-        }
-      } catch (err) {
-        console.debug('[BackgroundAudio] Mobile audio anchor init:', err);
-      }
+    const mobileAnchor = document.getElementById('wavelink-mobile-bg-audio');
+    if (mobileAnchor) {
+      mobileAnchor.remove();
     }
   }
 
-  // 2. Web Audio keepalive (Desktop & Web Audio supported environments)
+  // Web Audio keepalive (Cross-platform: Desktop, iOS Safari, Android Chromium)
+  // Web Audio API chạy trong audio mixer subsystem và không chiếm quyền ưu tiên phát của HTML5 <video> / YouTube
   try {
     const AudioContextClass =
       window.AudioContext ||
@@ -151,10 +73,13 @@ export function startBackgroundAudio(): void {
  * Dừng phiên phát âm thanh nền
  */
 export function stopBackgroundAudio(): void {
-  if (mobileAudioElement) {
-    try {
-      mobileAudioElement.pause();
-    } catch {}
+  if (typeof document !== 'undefined') {
+    const mobileAnchor = document.getElementById('wavelink-mobile-bg-audio');
+    if (mobileAnchor) {
+      try {
+        mobileAnchor.remove();
+      } catch {}
+    }
   }
 
   if (silentSource) {
@@ -179,4 +104,3 @@ export function stopBackgroundAudio(): void {
 export function isBackgroundAudioRunning(): boolean {
   return isRunning;
 }
-

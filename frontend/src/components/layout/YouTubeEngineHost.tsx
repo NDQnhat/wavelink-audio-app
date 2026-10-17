@@ -9,6 +9,7 @@ export const YouTubeEngineHost: React.FC = () => {
   const handleEpisodeComplete = usePlayerStore((s) => s.handleEpisodeComplete);
   const pause = usePlayerStore((s) => s.pause);
   const resume = usePlayerStore((s) => s.resume);
+  const seekTo = usePlayerStore((s) => s.seekTo);
   const skipSeconds = usePlayerStore((s) => s.skipSeconds);
   const prevEpisode = usePlayerStore((s) => s.prevEpisode);
   const nextEpisode = usePlayerStore((s) => s.nextEpisode);
@@ -32,6 +33,11 @@ export const YouTubeEngineHost: React.FC = () => {
       safeSetHandler('seekforward', () => skipSeconds(30));
       safeSetHandler('previoustrack', () => prevEpisode());
       safeSetHandler('nexttrack', () => nextEpisode());
+      safeSetHandler('seekto', (details) => {
+        if (details.seekTime !== undefined && details.seekTime !== null) {
+          seekTo(details.seekTime);
+        }
+      });
     }
 
     // 2. Load YouTube IFrame Script nếu chưa có
@@ -49,8 +55,8 @@ export const YouTubeEngineHost: React.FC = () => {
       isInitializingRef.current = true;
 
       const player = new window.YT.Player('yt-player-target', {
-        height: '200',
-        width: '200',
+        height: '240',
+        width: '320',
         host: 'https://www.youtube-nocookie.com',
         playerVars: {
           enablejsapi: 1,
@@ -67,7 +73,7 @@ export const YouTubeEngineHost: React.FC = () => {
             setYtInstance(player, instanceId);
             const targetRate = usePlayerStore.getState().playbackRate || 1.0;
             if (targetRate !== 1.0) {
-              rateCoordinator.setDesiredRate(targetRate, 'player_onReady_restore');
+              rateCoordinator.enforceRateWithRetries(targetRate, 'player_onReady_restore');
             }
           },
           onStateChange: (event: { data: number }) => {
@@ -86,13 +92,16 @@ export const YouTubeEngineHost: React.FC = () => {
               usePlayerStore.setState({ isPlaying: true, isSeeking: false });
               const targetRate = usePlayerStore.getState().playbackRate || 1.0;
               if (targetRate !== 1.0) {
-                rateCoordinator.applyRate('video_playing_enforce');
+                rateCoordinator.enforceRateWithRetries(targetRate, 'video_playing_enforce');
               }
             } else if (state === window.YT?.PlayerState?.PAUSED) {
               const currentStore = usePlayerStore.getState();
               // Nếu người dùng không chủ động bấm pause (mà do tab bị ẩn, thoát app, tắt màn hình)
               if (currentStore.isPlaying && !currentStore.isExplicitlyPaused) {
                 console.debug('[YouTubeEngineHost] Background interruption detected. Resuming playback...');
+                try {
+                  playerRef.current?.playVideo();
+                } catch {}
                 setTimeout(() => {
                   if (playerRef.current && usePlayerStore.getState().isPlaying && !usePlayerStore.getState().isExplicitlyPaused) {
                     try {
@@ -153,9 +162,11 @@ export const YouTubeEngineHost: React.FC = () => {
       }, 100);
     }
 
-    // 3. Listener duy trì phát audio chạy ngầm khi ẩn tab, chuyển app hoặc khóa màn hình
+    // 3. Listener duy trì phát audio và cưỡng chế tốc độ khi ẩn tab / chuyển app / quay lại app
     const handleVisibilityChange = () => {
       const store = usePlayerStore.getState();
+      const desiredRate = store.playbackRate || 1.0;
+
       if (document.hidden) {
         // App / Tab chuyển sang chạy nền
         if (store.isPlaying && !store.isExplicitlyPaused) {
@@ -176,18 +187,42 @@ export const YouTubeEngineHost: React.FC = () => {
             }
           } catch {}
         }
+        // Cưỡng chế áp dụng lại tốc độ đã chọn ngay khi app hiển thị lại
+        if (desiredRate !== 1.0) {
+          rateCoordinator.enforceRateWithRetries(desiredRate, 'app_foreground_visibility');
+        }
+      }
+    };
+
+    const handleWindowFocus = () => {
+      const store = usePlayerStore.getState();
+      const desiredRate = store.playbackRate || 1.0;
+      if (store.isPlaying && !store.isExplicitlyPaused && playerRef.current) {
+        try {
+          const ytState = playerRef.current.getPlayerState?.();
+          if (ytState !== 1) {
+            playerRef.current.playVideo();
+          }
+        } catch {}
+      }
+      if (desiredRate !== 1.0) {
+        rateCoordinator.enforceRateWithRetries(desiredRate, 'app_foreground_focus');
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('pageshow', handleWindowFocus);
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('pageshow', handleWindowFocus);
       rateCoordinator.detachPlayer(instanceId);
       playerRef.current = null;
       isInitializingRef.current = false;
     };
-  }, [handleEpisodeComplete, nextEpisode, pause, prevEpisode, resume, setYtInstance, skipSeconds]);
+  }, [handleEpisodeComplete, nextEpisode, pause, prevEpisode, resume, seekTo, setYtInstance, skipSeconds]);
 
   return (
     <div
@@ -195,12 +230,12 @@ export const YouTubeEngineHost: React.FC = () => {
       style={{
         position: 'fixed',
         bottom: '0px',
-        right: '0px',
-        width: '2px',
-        height: '2px',
-        opacity: 0.01,
+        left: '0px',
+        width: '320px',
+        height: '240px',
+        opacity: 0.001,
         pointerEvents: 'none',
-        zIndex: 1,
+        zIndex: -999,
       }}
     >
       <div id="yt-player-target" />

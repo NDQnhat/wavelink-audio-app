@@ -21,8 +21,22 @@ export class PlaybackRateCoordinator {
   private listeners: RateCoordinatorListener[] = [];
 
   constructor(initialDesiredRate: number = 1.0) {
-    this.desiredRate = initialDesiredRate;
-    this.confirmedRate = initialDesiredRate;
+    let rate = initialDesiredRate;
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const saved =
+          localStorage.getItem('comic_audio_preferred_playback_rate') ||
+          localStorage.getItem('comic_audio_current_speed') ||
+          localStorage.getItem('wavelink_playback_rate') ||
+          localStorage.getItem('wavelink_default_playback_rate');
+        if (saved) {
+          const parsed = parseFloat(saved);
+          if (!isNaN(parsed) && parsed > 0) rate = parsed;
+        }
+      } catch {}
+    }
+    this.desiredRate = rate;
+    this.confirmedRate = rate;
   }
 
   subscribe(listener: RateCoordinatorListener): () => void {
@@ -168,12 +182,12 @@ export class PlaybackRateCoordinator {
     });
 
     if (isMatch) {
-      // Đã xác nhận khớp tốc độ mong muốn: xóa toàn bộ retry
-      this.clearPendingRetries();
+      // Đã xác nhận khớp tốc độ mong muốn
+      this.syncStatus = 'synced';
     } else {
-      // YouTube chỉ tự ý reset về 1.0 trong lúc đang phát:
-      // Tuyệt đối KHÔNG reassert nếu YouTube báo rate khác nhưng desiredRate đang ở 1.0 hoặc không playing
-      if (this.isPlaying && Math.abs(newRate - 1.0) <= 0.05 && this.desiredRate > 1.0) {
+      // YouTube chỉ tự ý reset về 1.0 trong lúc phát hoặc chuyển app:
+      // Tự động cưỡng chế lại tốc độ mong muốn của người dùng ngay lập tức
+      if (Math.abs(newRate - 1.0) <= 0.05 && this.desiredRate > 1.0) {
         playerLogger.log({
           instanceId: this.instanceId,
           action: 'RATE_RESET_BY_YOUTUBE_DETECTED',
@@ -182,12 +196,67 @@ export class PlaybackRateCoordinator {
           confirmedRate: newRate,
         });
         setTimeout(() => {
-          if (this.isPlaying && Math.abs(this.confirmedRate - this.desiredRate) > 0.05) {
-            this.applyRate('reassert_after_youtube_reset');
-          }
-        }, 100);
+          this.enforceRateWithRetries(this.desiredRate, 'reassert_after_youtube_reset');
+        }, 80);
       }
     }
+  }
+
+  enforceRateWithRetries(rate: number, reason: string) {
+    const targetRate = parseFloat(String(rate)) || 1.0;
+    this.desiredRate = targetRate;
+    const isAlreadyConfirmed = Math.abs(this.confirmedRate - targetRate) <= 0.05;
+    this.syncStatus = isAlreadyConfirmed ? 'synced' : 'applying';
+    this.notifyDesiredRate(targetRate);
+    this.notifyConfirmedRate(this.confirmedRate, this.syncStatus);
+
+    if (!this.player || typeof this.player.setPlaybackRate !== 'function') return;
+
+    this.clearPendingRetries();
+
+    const doSetRate = (desc: string) => {
+      try {
+        if (!this.player || typeof this.player.setPlaybackRate !== 'function') return;
+
+        // Nếu YouTube player khai báo đã ở targetRate nhưng chúng ta đang cần cưỡng chế lại (do lag/foreground),
+        // đảo về 1.0 trước trong cùng tick để phá vỡ cache nội bộ của YouTube IFrame JS
+        if (
+          typeof this.player.getPlaybackRate === 'function' &&
+          this.player.getPlaybackRate() === targetRate &&
+          targetRate !== 1.0
+        ) {
+          try {
+            this.player.setPlaybackRate(1.0);
+          } catch {}
+        }
+
+        this.player.setPlaybackRate(targetRate);
+        playerLogger.log({
+          instanceId: this.instanceId,
+          action: 'ENFORCE_RATE_ATTEMPT',
+          reason: desc,
+          desiredRate: targetRate,
+        });
+      } catch (err) {
+        playerLogger.log({
+          instanceId: this.instanceId,
+          action: 'ENFORCE_RATE_ATTEMPT_ERROR',
+          reason: String(err),
+        });
+      }
+    };
+
+    // Áp dụng ngay
+    doSetRate(`${reason}_immediate`);
+
+    // Bắt buộc retry định kỳ (150ms, 400ms, 800ms, 1500ms, 2500ms) để đối phó với độ trễ audio decoder mobile
+    const delays = [150, 400, 800, 1500, 2500];
+    delays.forEach((delay, idx) => {
+      const t = setTimeout(() => {
+        doSetRate(`${reason}_delay_${delay}ms_${idx + 1}`);
+      }, delay);
+      this.applyTimeouts.push(t);
+    });
   }
 
   applyRate(reason: string) {
@@ -201,83 +270,7 @@ export class PlaybackRateCoordinator {
       return;
     }
 
-    this.clearPendingRetries();
-
-    const checkYtPlayerRate = () => {
-      try {
-        if (typeof this.player.getPlaybackRate === 'function') {
-          const currentYtRate = this.player.getPlaybackRate();
-          if (typeof currentYtRate === 'number' && Math.abs(currentYtRate - this.desiredRate) <= 0.05) {
-            this.confirmedRate = currentYtRate;
-            this.syncStatus = 'synced';
-            this.notifyConfirmedRate(currentYtRate, 'synced');
-            this.clearPendingRetries();
-            return true;
-          }
-        }
-      } catch {}
-      return false;
-    };
-
-    const doApply = (attemptReason: string) => {
-      try {
-        playerLogger.log({
-          instanceId: this.instanceId,
-          action: 'CALL_SET_PLAYBACK_RATE',
-          reason: attemptReason,
-          desiredRate: this.desiredRate,
-          confirmedRate: this.confirmedRate,
-        });
-
-        this.player.setPlaybackRate(this.desiredRate);
-
-        if (this.isPlaying) {
-          checkYtPlayerRate();
-        }
-      } catch (err) {
-        playerLogger.log({
-          instanceId: this.instanceId,
-          action: 'CALL_SET_PLAYBACK_RATE_ERROR',
-          reason: String(err),
-        });
-      }
-    };
-
-    // Áp dụng ngay
-    doApply(reason);
-
-    // Bounded retries: 3 nấc an toàn (150ms, 400ms, 800ms)
-    // Chỉ retry khi player đang PLAYING. Nếu đang buffering hoặc paused, đợi event PLAYING!
-    const delays = [150, 400, 800];
-    delays.forEach((delay, idx) => {
-      const t = setTimeout(() => {
-        if (this.isPlaying && Math.abs(this.confirmedRate - this.desiredRate) > 0.05) {
-          doApply(`${reason}_retry_${idx + 1}_at_${delay}ms`);
-
-          // Nếu sau lần retry cuối cùng vẫn chưa xác nhận, kiểm tra thêm 1 nhịp sau 300ms:
-          if (idx === delays.length - 1) {
-            const finalCheckTimeout = setTimeout(() => {
-              if (this.isPlaying && Math.abs(this.confirmedRate - this.desiredRate) > 0.05) {
-                // Kiểm tra trực tiếp từ player xem có khớp không trước khi kết luận
-                if (!checkYtPlayerRate()) {
-                  this.syncStatus = 'unsupported';
-                  this.notifyConfirmedRate(this.confirmedRate, 'unsupported');
-                  playerLogger.log({
-                    instanceId: this.instanceId,
-                    action: 'RATE_NOT_SUPPORTED_AFTER_RETRIES',
-                    reason: `Rate ${this.desiredRate} was not acknowledged by YouTube player`,
-                    desiredRate: this.desiredRate,
-                    confirmedRate: this.confirmedRate,
-                  });
-                }
-              }
-            }, 300);
-            this.applyTimeouts.push(finalCheckTimeout);
-          }
-        }
-      }, delay);
-      this.applyTimeouts.push(t);
-    });
+    this.enforceRateWithRetries(this.desiredRate, reason);
   }
 
   clearPendingRetries() {

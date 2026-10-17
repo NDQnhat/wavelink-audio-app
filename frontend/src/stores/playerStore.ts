@@ -236,7 +236,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setYtInstance: (instance: unknown, instanceId: string = 'yt-player-host') => {
     ytPlayerInstance = instance;
     set({ isYtReady: true });
+    const currentRate = get().playbackRate || getStoredPlaybackRate() || 1.0;
+    rateCoordinator.setDesiredRate(currentRate, 'setYtInstance');
     rateCoordinator.attachPlayer(instance, instanceId);
+    if (currentRate !== 1.0) {
+      rateCoordinator.enforceRateWithRetries(currentRate, 'yt_instance_ready');
+    }
 
     // Xử lý pending playback: nếu user nhấn play trước khi YouTube iframe khởi tạo xong
     const state = get();
@@ -378,7 +383,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     startPolling();
     startHeartbeat();
     startBackgroundAudio();
-    updateMediaSession(true, audio, targetEpisode);
+    updateMediaSession(true, audio, targetEpisode, currentTime, duration, activeRate);
   },
 
   togglePlay: () => {
@@ -410,7 +415,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       stopHeartbeat();
       stopBackgroundAudio();
     }
-    updateMediaSession(nextPlaying, currentAudio, get().currentEpisode);
+    updateMediaSession(nextPlaying, currentAudio, get().currentEpisode, get().currentTime, get().duration, get().playbackRate);
   },
 
   pause: () => {
@@ -426,7 +431,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     stopPolling();
     stopHeartbeat();
     stopBackgroundAudio();
-    updateMediaSession(false, get().currentAudio, get().currentEpisode);
+    updateMediaSession(false, get().currentAudio, get().currentEpisode, get().currentTime, get().duration, get().playbackRate);
   },
 
   resume: () => {
@@ -442,7 +447,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     startPolling();
     startHeartbeat();
     startBackgroundAudio();
-    updateMediaSession(true, get().currentAudio, get().currentEpisode);
+    updateMediaSession(true, get().currentAudio, get().currentEpisode, get().currentTime, get().duration, get().playbackRate);
   },
 
   seekTo: (seconds: number) => {
@@ -750,11 +755,18 @@ function startPolling() {
 }
 
 let watchdogDesyncCounter = 0;
+let lastProgressionWallTime = 0;
+let lastProgressionVideoTime = 0;
+let hardwareProgressionLagCounter = 0;
+let mediaSessionSyncCounter = 0;
 
 function pollIntervalHandler() {
   const store = usePlayerStore.getState();
   if (!store.isPlaying) {
     watchdogDesyncCounter = 0;
+    lastProgressionWallTime = 0;
+    lastProgressionVideoTime = 0;
+    hardwareProgressionLagCounter = 0;
     return;
   }
 
@@ -776,6 +788,7 @@ function pollIntervalHandler() {
   }
 
   if (ytPlayerInstance && typeof ytPlayerInstance.getCurrentTime === 'function') {
+    const now = performance.now();
     // Watchdog Guard: Luôn bảo đảm tốc độ thực của YouTube player đồng bộ chính xác với tốc độ đã chọn
     try {
       const ytState = typeof ytPlayerInstance.getPlayerState === 'function' ? ytPlayerInstance.getPlayerState() : null;
@@ -783,6 +796,8 @@ function pollIntervalHandler() {
       if (ytState === 1 && !rateCoordinator.isBusyApplying()) {
         const actualRate = ytPlayerInstance.getPlaybackRate();
         const targetRate = store.playbackRate || 1.0;
+
+        // 1. Kiểm tra thuộc tính getPlaybackRate của YouTube
         if (typeof actualRate === 'number' && Math.abs(actualRate - targetRate) > 0.05) {
           watchdogDesyncCounter++;
           // Cần xác nhận lệch liên tục ít nhất 2 lần poll (2 giây) khi đang phát ổn định để tránh bão retry
@@ -793,8 +808,36 @@ function pollIntervalHandler() {
         } else {
           watchdogDesyncCounter = 0;
         }
+
+        // 2. Hardware Progression Watchdog: Đo tiến độ thực tế theo thời gian thực (wall clock delta)
+        // để phát hiện trường hợp decoder phần cứng trên mobile bị reset về 1.0x dù getPlaybackRate trả về 2.0x
+        const currentAbs = ytPlayerInstance.getCurrentTime();
+        if (lastProgressionWallTime > 0 && lastProgressionVideoTime > 0 && !store.isSeeking) {
+          const deltaWall = (now - lastProgressionWallTime) / 1000;
+          const deltaVideo = currentAbs - lastProgressionVideoTime;
+          if (targetRate > 1.05 && deltaWall >= 1.5 && deltaWall <= 3.5 && deltaVideo > 0) {
+            const measuredRate = deltaVideo / deltaWall;
+            if (measuredRate < targetRate * 0.75) {
+              hardwareProgressionLagCounter++;
+              if (hardwareProgressionLagCounter >= 2) {
+                hardwareProgressionLagCounter = 0;
+                console.debug(
+                  `[PlayerStore] Hardware progression lag detected (${measuredRate.toFixed(2)}x vs expected ${targetRate}x). Enforcing rate...`
+                );
+                rateCoordinator.enforceRateWithRetries(targetRate, 'watchdog_hardware_progression_lag');
+              }
+            } else {
+              hardwareProgressionLagCounter = 0;
+            }
+          }
+        }
+        lastProgressionWallTime = now;
+        lastProgressionVideoTime = currentAbs;
       } else {
         watchdogDesyncCounter = 0;
+        lastProgressionWallTime = 0;
+        lastProgressionVideoTime = 0;
+        hardwareProgressionLagCounter = 0;
       }
     } catch {}
 
@@ -808,6 +851,20 @@ function pollIntervalHandler() {
       const epPos = Math.round(absTime - startSec);
       if (epPos >= 0) {
         usePlayerStore.setState({ currentTime: epPos });
+      }
+
+      // Đồng bộ timeline lên Lock Screen / Notification MediaSession định kỳ 3 giây
+      mediaSessionSyncCounter++;
+      if (mediaSessionSyncCounter >= 3) {
+        mediaSessionSyncCounter = 0;
+        updateMediaSession(
+          true,
+          store.currentAudio,
+          store.currentEpisode,
+          epPos,
+          store.duration,
+          store.playbackRate
+        );
       }
 
       if (absTime >= endSec && endSec > startSec) {
@@ -924,16 +981,37 @@ if (typeof window !== 'undefined') {
   window.__measureProgressionRate = measureProgressionRate;
 }
 
-function updateMediaSession(playing: boolean, audio: AudioItem | null, episode: Episode | null) {
+function updateMediaSession(
+  playing: boolean,
+  audio: AudioItem | null,
+  episode: Episode | null,
+  currentTime?: number,
+  duration?: number,
+  playbackRate?: number
+) {
   if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
     if (audio) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: episode?.title || audio.title,
-        artist: audio.author || 'YouTube Audio',
+        artist: audio.author || 'WaveLink Audio',
         album: audio.title,
-        artwork: [{ src: audio.thumbnailUrl, sizes: '512x512', type: 'image/jpeg' }],
+        artwork: [
+          { src: audio.thumbnailUrl || '/icons/icon-512x512.png', sizes: '512x512', type: 'image/jpeg' },
+          { src: audio.thumbnailUrl || '/icons/icon-192x192.png', sizes: '192x192', type: 'image/jpeg' },
+        ],
       });
       navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+
+      if ('setPositionState' in navigator.mediaSession && duration && duration > 0) {
+        try {
+          const curPos = Math.max(0, Math.min(currentTime || 0, duration));
+          navigator.mediaSession.setPositionState({
+            duration,
+            playbackRate: playbackRate || 1.0,
+            position: curPos,
+          });
+        } catch {}
+      }
     } else {
       navigator.mediaSession.metadata = null;
       navigator.mediaSession.playbackState = 'none';
