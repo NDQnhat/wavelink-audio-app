@@ -606,8 +606,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   reset: () => {
     if (ytPlayerInstance) {
       try {
-        ytPlayerInstance.stopVideo?.();
         ytPlayerInstance.pauseVideo?.();
+        ytPlayerInstance.seekTo?.(0, true);
       } catch {
         // Ignore
       }

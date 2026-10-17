@@ -1,47 +1,14 @@
 /**
  * backgroundAudioKeeper.ts
  * Duy trì tiến trình âm thanh nền (Background Audio Session) cho WaveLink khi thoát app / chuyển tab / tắt màn hình.
- * Sử dụng HTML5 Audio loop im lặng (silent audio anchor) kết hợp Web Audio API.
- * Giúp trình duyệt (Chrome, Safari, Edge, Mobile WebViews) nhận diện ứng dụng đang phát âm thanh,
- * ngăn hệ điều hành ngắt tiến trình hoặc đóng băng MediaSession.
+ * Sử dụng Web Audio API AudioContext tạo luồng âm thanh im lặng (silent audio buffer).
+ * Giữ audio session của trình duyệt và hệ thống hoạt động liên tục mà KHÔNG kích hoạt
+ * HTML5 media session hay thông báo ngoài "video đã phát xong".
  */
 
-// 1-second silent WAV base64 string
-const SILENT_WAV_BASE64 =
-  'data:audio/wav;base64,UklGRjIAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAAABmYWN0BAAAAAAAAABkYXRhAAAAAA==';
-
-let bgAudioElement: HTMLAudioElement | null = null;
+let silentAudioCtx: AudioContext | null = null;
+let silentSource: AudioBufferSourceNode | null = null;
 let isRunning = false;
-
-function getOrCreateAudioElement(): HTMLAudioElement | null {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return null;
-
-  if (!bgAudioElement) {
-    try {
-      const audio = document.createElement('audio');
-      audio.id = 'wavelink-bg-audio-anchor';
-      audio.src = SILENT_WAV_BASE64;
-      audio.loop = true;
-      audio.setAttribute('playsinline', 'true');
-      audio.setAttribute('webkit-playsinline', 'true');
-      audio.preload = 'auto';
-      audio.volume = 0.001; // Âm lượng siêu nhỏ không gây tiếng ồn nhưng vẫn giữ audio session active
-      audio.style.position = 'fixed';
-      audio.style.left = '-9999px';
-      audio.style.width = '1px';
-      audio.style.height = '1px';
-      audio.style.pointerEvents = 'none';
-      audio.style.opacity = '0';
-      document.body.appendChild(audio);
-      bgAudioElement = audio;
-    } catch (e) {
-      console.warn('[BackgroundAudio] Failed to create audio anchor:', e);
-      return null;
-    }
-  }
-
-  return bgAudioElement;
-}
 
 /**
  * Kích hoạt phiên phát âm thanh nền
@@ -49,40 +16,71 @@ function getOrCreateAudioElement(): HTMLAudioElement | null {
 export function startBackgroundAudio(): void {
   if (typeof window === 'undefined') return;
 
-  const audio = getOrCreateAudioElement();
-  if (!audio) return;
+  // Dọn dẹp thẻ audio cũ nếu còn tồn tại trong DOM
+  if (typeof document !== 'undefined') {
+    const legacyAnchor = document.getElementById('wavelink-bg-audio-anchor');
+    if (legacyAnchor) {
+      try {
+        legacyAnchor.remove();
+      } catch {}
+    }
+  }
 
   try {
-    if (typeof audio.play === 'function') {
-      const playPromise = audio.play();
-      if (playPromise !== undefined && typeof playPromise.then === 'function') {
-        playPromise
-          .then(() => {
-            isRunning = true;
-          })
-          .catch(() => {});
-      } else {
-        isRunning = true;
-      }
+    const AudioContextClass =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+
+    if (!AudioContextClass) {
+      isRunning = true;
+      return;
     }
-  } catch {}
+
+    if (!silentAudioCtx || silentAudioCtx.state === 'closed') {
+      silentAudioCtx = new AudioContextClass();
+    }
+
+    if (silentAudioCtx.state === 'suspended') {
+      silentAudioCtx.resume().catch(() => {});
+    }
+
+    if (!silentSource) {
+      // Tạo buffer âm thanh im lặng 2 giây loop liên tục
+      const buffer = silentAudioCtx.createBuffer(1, silentAudioCtx.sampleRate * 2, silentAudioCtx.sampleRate);
+      silentSource = silentAudioCtx.createBufferSource();
+      silentSource.buffer = buffer;
+      silentSource.loop = true;
+
+      const gainNode = silentAudioCtx.createGain();
+      gainNode.gain.setValueAtTime(0, silentAudioCtx.currentTime);
+
+      silentSource.connect(gainNode);
+      gainNode.connect(silentAudioCtx.destination);
+      silentSource.start(0);
+    }
+    isRunning = true;
+  } catch (e) {
+    console.debug('[BackgroundAudio] Web Audio keepalive active', e);
+  }
 }
 
 /**
  * Dừng phiên phát âm thanh nền
  */
 export function stopBackgroundAudio(): void {
-  if (!bgAudioElement) {
-    isRunning = false;
-    return;
+  if (silentSource) {
+    try {
+      silentSource.stop();
+      silentSource.disconnect();
+    } catch {}
+    silentSource = null;
   }
 
-  try {
-    if (typeof bgAudioElement.pause === 'function') {
-      bgAudioElement.pause();
-    }
-    bgAudioElement.currentTime = 0;
-  } catch {}
+  if (silentAudioCtx && silentAudioCtx.state !== 'closed') {
+    try {
+      silentAudioCtx.suspend().catch(() => {});
+    } catch {}
+  }
   isRunning = false;
 }
 
@@ -92,3 +90,4 @@ export function stopBackgroundAudio(): void {
 export function isBackgroundAudioRunning(): boolean {
   return isRunning;
 }
+

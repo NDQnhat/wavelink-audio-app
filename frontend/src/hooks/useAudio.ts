@@ -57,9 +57,47 @@ export function useToggleFavorite() {
 
   return useMutation({
     mutationFn: (audioId: number | string) => api.audio.toggleFavorite(audioId, isLive),
-    onSuccess: (_, audioId) => {
+    onMutate: async (audioId) => {
+      await queryClient.cancelQueries({ queryKey: ['audio'] });
+      await queryClient.cancelQueries({ queryKey: ['audios'] });
+
+      // Optimistically update single audio query cache
+      queryClient.setQueriesData({ queryKey: ['audio'] }, (old: any) => {
+        if (!old) return old;
+        if (String(old.id) === String(audioId)) {
+          return { ...old, isFavorite: !old.isFavorite };
+        }
+        return old;
+      });
+
+      // Optimistically update audios list cache
+      queryClient.setQueriesData({ queryKey: ['audios'] }, (old: any) => {
+        if (!old) return old;
+        if (Array.isArray(old)) {
+          return old.map((a) => (String(a.id) === String(audioId) ? { ...a, isFavorite: !a.isFavorite } : a));
+        }
+        if (old.data && Array.isArray(old.data)) {
+          return {
+            ...old,
+            data: old.data.map((a: any) =>
+              String(a.id) === String(audioId) ? { ...a, isFavorite: !a.isFavorite } : a
+            ),
+          };
+        }
+        return old;
+      });
+    },
+    onSuccess: (newStatus, audioId) => {
+      if (typeof newStatus === 'boolean') {
+        queryClient.setQueriesData({ queryKey: ['audio'] }, (old: any) => {
+          if (old && String(old.id) === String(audioId)) {
+            return { ...old, isFavorite: newStatus };
+          }
+          return old;
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ['audios'] });
-      queryClient.invalidateQueries({ queryKey: ['audio', audioId] });
+      queryClient.invalidateQueries({ queryKey: ['audio'] });
     },
   });
 }

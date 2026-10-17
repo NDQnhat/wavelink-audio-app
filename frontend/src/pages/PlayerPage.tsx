@@ -50,6 +50,8 @@ export const PlayerPage: React.FC = () => {
   const [scrubPercent, setScrubPercent] = useState<number | null>(null);
   const [episodePage, setEpisodePage] = useState(1);
   const [syncedRecentInfo, setSyncedRecentInfo] = useState<{ position: string; epNumber: number } | null>(null);
+  const [syncCountdown, setSyncCountdown] = useState<number>(60);
+  const [optimisticFavorite, setOptimisticFavorite] = useState<boolean | null>(null);
   const [isSeekLocked, setIsSeekLocked] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('wavelink_seek_locked') === 'true';
@@ -67,6 +69,55 @@ export const PlayerPage: React.FC = () => {
       toast.info('Đã khóa thanh tua thời lượng! Chống chạm nhầm khi nghe.');
     } else {
       toast.success('Đã mở khóa thanh tua thời lượng.');
+    }
+  };
+
+  const isTargetAudioPlaying = Boolean(audio && currentAudio?.id === audio.id);
+
+  // Đồng bộ trạng thái yêu thích từ query khi dữ liệu audio cập nhật
+  React.useEffect(() => {
+    setOptimisticFavorite(null);
+  }, [audio?.id, audio?.isFavorite]);
+
+  // 1. Tự động đồng bộ mốc nghe gần nhất và đếm ngược SYNC 60S (từ 60 về 0) khi đang phát audio này
+  React.useEffect(() => {
+    if (!isTargetAudioPlaying || !isPlaying) {
+      setSyncCountdown(60);
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setSyncCountdown((prev) => {
+        if (prev <= 1) {
+          if (currentTime > 0) {
+            setSyncedRecentInfo({
+              position: formatTime(currentTime),
+              epNumber: currentEpisode?.episodeNumber || 1,
+            });
+            if (audio?.id) {
+              queryClient.invalidateQueries({ queryKey: ['audio'] });
+            }
+          }
+          return 60;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isTargetAudioPlaying, isPlaying, currentTime, currentEpisode, audio?.id, queryClient]);
+
+  const handleManualSyncRecent = () => {
+    if (currentTime > 0) {
+      setSyncedRecentInfo({
+        position: formatTime(currentTime),
+        epNumber: currentEpisode?.episodeNumber || 1,
+      });
+      if (audio?.id) {
+        queryClient.invalidateQueries({ queryKey: ['audio'] });
+      }
+      setSyncCountdown(60);
+      toast.success('Đã đồng bộ mốc nghe gần nhất!');
     }
   };
 
@@ -88,29 +139,27 @@ export const PlayerPage: React.FC = () => {
     );
   }
 
-  const isTargetAudioPlaying = currentAudio?.id === audio.id;
   const isVipOrAdmin = user?.role === 'VIP' || user?.role === 'ADMIN' || user?.membership === 'VIP';
   const isVipAudio = Boolean(audio.isVIPOnly || audio.isVipOnly);
   const isGuest = !user || user.isGuest || user.role === 'GUEST';
 
-  // 1. Tự động đồng bộ mốc nghe gần nhất mỗi 60 giây khi đang phát audio này
-  React.useEffect(() => {
-    if (!isTargetAudioPlaying || !isPlaying) return;
+  const isFavorite = optimisticFavorite !== null ? optimisticFavorite : Boolean(audio.isFavorite);
 
-    const interval = setInterval(() => {
-      if (currentTime > 0) {
-        setSyncedRecentInfo({
-          position: formatTime(currentTime),
-          epNumber: currentEpisode?.episodeNumber || 1,
-        });
-        if (audio?.id) {
-          queryClient.invalidateQueries({ queryKey: ['audio', audio.id] });
-        }
-      }
-    }, 60000);
-
-    return () => clearInterval(interval);
-  }, [isTargetAudioPlaying, isPlaying, currentTime, currentEpisode, audio?.id, queryClient]);
+  const handleToggleFavorite = () => {
+    const nextVal = !isFavorite;
+    setOptimisticFavorite(nextVal);
+    toggleFavoriteMutation.mutate(audio.id, {
+      onError: () => {
+        setOptimisticFavorite(!nextVal);
+        toast.error('Không thể cập nhật trạng thái yêu thích');
+      },
+    });
+    if (nextVal) {
+      toast.success('Đã thêm vào danh sách yêu thích!');
+    } else {
+      toast.info('Đã xóa khỏi danh sách yêu thích.');
+    }
+  };
 
   const isEpLocked = (ep: { episodeNumber: number; isVip?: boolean; isLocked?: boolean }) => {
     if (isVipOrAdmin) return false;
@@ -218,14 +267,14 @@ export const PlayerPage: React.FC = () => {
             <i className="ri-share-forward-line font-bold" />
           </button>
           <button
-            onClick={() => toggleFavoriteMutation.mutate(audio.id)}
-            className="w-8 h-8 rounded-lg border-2 border-black bg-white flex items-center justify-center shadow-comic-sm hover:bg-gray-100 active:translate-x-0.5 active:translate-y-0.5"
-            title="Yêu thích"
+            onClick={handleToggleFavorite}
+            className="w-8 h-8 rounded-lg border-2 border-black bg-white flex items-center justify-center shadow-comic-sm hover:bg-gray-100 active:translate-x-0.5 active:translate-y-0.5 transition-transform"
+            title={isFavorite ? 'Bỏ yêu thích' : 'Yêu thích'}
           >
             <i
               className={`${
-                audio.isFavorite ? 'ri-heart-3-fill text-[#E63946]' : 'ri-heart-3-line text-black'
-              } text-lg`}
+                isFavorite ? 'ri-heart-3-fill text-[#E63946] scale-110' : 'ri-heart-3-line text-black'
+              } text-lg transition-transform`}
             />
           </button>
         </div>
@@ -304,7 +353,17 @@ export const PlayerPage: React.FC = () => {
             <i className="ri-history-line font-bold" />
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="text-[10px] font-extrabold uppercase text-gray-700">Mốc nghe gần nhất</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-extrabold uppercase text-gray-700">Mốc nghe gần nhất</span>
+              <button
+                onClick={handleManualSyncRecent}
+                className="badge-comic badge-comic-yellow text-[9px] font-mono shrink-0 flex items-center gap-1 cursor-pointer hover:bg-yellow-200 active:scale-95 transition-all shadow-[1px_1px_0_#000]"
+                title="Đang đếm ngược để đồng bộ mốc nghe. Chạm để đồng bộ ngay!"
+              >
+                <i className={`ri-refresh-line text-[9px] ${isTargetAudioPlaying && isPlaying ? 'animate-spin' : ''}`} />
+                SYNC: {syncCountdown}s
+              </button>
+            </div>
             <span className="text-xs font-bold text-black truncate">
               Tiếp tục từ <strong>{syncedRecentInfo?.position || audio.formattedPosition || '00:00:00'}</strong> (Tập {syncedRecentInfo?.epNumber || audio.currentEpisodeNumber || 1})
             </span>
@@ -326,9 +385,13 @@ export const PlayerPage: React.FC = () => {
             <Equalizer isPlaying={isTargetAudioPlaying && isPlaying} />
             <span className="font-extrabold text-black truncate">{activeEp.title}</span>
           </div>
-          <span className="badge-comic badge-comic-teal text-[9px] py-0.5">
-            <i className="ri-refresh-line" /> SYNC 60S
-          </span>
+          <button
+            onClick={handleManualSyncRecent}
+            className="badge-comic badge-comic-teal text-[9px] py-0.5 font-mono cursor-pointer hover:bg-teal-200 active:scale-95 transition-all flex items-center gap-1"
+            title="Tự động đồng bộ mốc nghe mỗi 60s. Chạm để đồng bộ ngay!"
+          >
+            <i className={`ri-refresh-line ${isTargetAudioPlaying && isPlaying ? 'animate-spin' : ''}`} /> SYNC: {syncCountdown}s
+          </button>
         </div>
 
         {/* Custom Comic Range Slider (Scrub Bar) with Accidental Seek Lock */}

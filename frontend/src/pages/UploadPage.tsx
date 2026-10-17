@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCategories } from '@/hooks/useCategories';
 import { useImportYouTube, useImportQuota } from '@/hooks/useAudio';
+import { triggerNotificationSync } from '@/hooks/useNotifications';
 import { useAuthStore } from '@/stores/authStore';
 import { usePlayerStore } from '@/stores/playerStore';
 import { api } from '@/services/api';
@@ -262,6 +263,7 @@ export const UploadPage: React.FC = () => {
         setDuplicateModalAudio(result.audio);
       } else {
         setSuccessModalAudio(result.audio);
+        triggerNotificationSync(true);
       }
     } catch (err: unknown) {
       toast.error((err as Error).message || 'Lỗi khi nhập audio');

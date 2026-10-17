@@ -8,6 +8,7 @@ import { AdminTableSkeleton } from '@/components/common/Skeletons';
 import { Pagination } from '@/components/ui/Pagination';
 import { CommunityMessage, CommunityAdminStats, WSCommunityMessage } from '@/types';
 import { DEFAULT_PAGE_SIZE } from '@/config/pagination';
+import { triggerNotificationSync } from '@/hooks/useNotifications';
 
 export const AdminCommunityPage: React.FC = () => {
   const [messages, setMessages] = useState<CommunityMessage[]>([]);
@@ -119,6 +120,7 @@ export const AdminCommunityPage: React.FC = () => {
     try {
       await api.community.sendMessage(`📢 [THÔNG BÁO QUẢN TRỊ VIÊN] ${text}`);
       toast.success('Đã phát thông báo Admin tới toàn thể cộng đồng!');
+      triggerNotificationSync(true);
       setAdminMsgText('');
       setIsAdminMsgModalOpen(false);
       loadData();

@@ -96,8 +96,12 @@ export const YouTubeEngineHost: React.FC = () => {
                 usePlayerStore.setState({ isPlaying: false });
               }
             } else if (state === window.YT?.PlayerState?.ENDED) {
-              usePlayerStore.setState({ isPlaying: false });
-              handleEpisodeComplete();
+              const currentStore = usePlayerStore.getState();
+              // Chỉ kích hoạt khi đang phát tự nhiên và không do người dùng chủ động tắt, dừng hoặc tua/chuyển bài
+              if (currentStore.isPlaying && !currentStore.isExplicitlyPaused && currentStore.currentAudio) {
+                usePlayerStore.setState({ isPlaying: false });
+                handleEpisodeComplete();
+              }
             }
 
             rateCoordinator.onStateChange(state, stateName);

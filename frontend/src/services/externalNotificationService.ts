@@ -173,18 +173,22 @@ class ExternalNotificationService {
         const lastNotifiedAudioId = localStorage.getItem('wavelink_last_audio_notified_id');
         const currentAudioId = String(latestAudio.id);
 
-        if (lastNotifiedAudioId && lastNotifiedAudioId !== currentAudioId) {
-          // Có audio mới được thêm vào thư viện -> Gửi thông báo gọn gàng
+        if (!lastNotifiedAudioId) {
+          // Lần đầu mở app: ghi nhận ID hiện tại làm mốc gốc, không gửi thông báo hay phát chuông
+          localStorage.setItem('wavelink_last_audio_notified_id', currentAudioId);
+          return;
+        }
+
+        if (lastNotifiedAudioId !== currentAudioId) {
+          // Có audio mới thực sự được thêm vào thư viện -> Gửi thông báo
           await this.showSystemNotification(`WaveLink • Audio Mới 🎧`, {
             body: `"${latestAudio.title}" vừa được thêm vào thư viện. Bấm để nghe ngay!`,
             url: `/#/player?audioId=${latestAudio.id}`,
             tag: `wavelink-new-audio-${latestAudio.id}`,
             type: 'audio',
           });
+          localStorage.setItem('wavelink_last_audio_notified_id', currentAudioId);
         }
-
-        // Cập nhật ID audio mới nhất đã xem xét
-        localStorage.setItem('wavelink_last_audio_notified_id', currentAudioId);
       } catch (err) {
         // Silent fail in background
       }
