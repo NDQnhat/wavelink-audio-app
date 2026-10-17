@@ -2,11 +2,13 @@ import React, { useEffect, useRef } from 'react';
 import { usePlayerStore } from '@/stores/playerStore';
 import { rateCoordinator } from '@/lib/playbackRateCoordinator';
 import { toast } from '@/components/ui/Toast';
+import { startBackgroundAudio } from '@/lib/backgroundAudioKeeper';
 
 export const YouTubeEngineHost: React.FC = () => {
   const setYtInstance = usePlayerStore((s) => s.setYtInstance);
   const handleEpisodeComplete = usePlayerStore((s) => s.handleEpisodeComplete);
-  const togglePlay = usePlayerStore((s) => s.togglePlay);
+  const pause = usePlayerStore((s) => s.pause);
+  const resume = usePlayerStore((s) => s.resume);
   const skipSeconds = usePlayerStore((s) => s.skipSeconds);
   const prevEpisode = usePlayerStore((s) => s.prevEpisode);
   const nextEpisode = usePlayerStore((s) => s.nextEpisode);
@@ -17,22 +19,22 @@ export const YouTubeEngineHost: React.FC = () => {
   useEffect(() => {
     const instanceId = instanceIdRef.current;
 
-    // 1. Setup Media Session Handlers safely for Safari/WebKit/Edge
+    // 1. Setup Media Session Handlers cho màn hình khóa (Lock screen) / Action Center của OS
     if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
       const safeSetHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler) => {
         try {
           navigator.mediaSession.setActionHandler(action, handler);
         } catch {}
       };
-      safeSetHandler('play', () => togglePlay());
-      safeSetHandler('pause', () => togglePlay());
+      safeSetHandler('play', () => resume());
+      safeSetHandler('pause', () => pause());
       safeSetHandler('seekbackward', () => skipSeconds(-15));
       safeSetHandler('seekforward', () => skipSeconds(30));
       safeSetHandler('previoustrack', () => prevEpisode());
       safeSetHandler('nexttrack', () => nextEpisode());
     }
 
-    // 2. Load YouTube IFrame Script if not already loaded
+    // 2. Load YouTube IFrame Script nếu chưa có
     if (!document.getElementById('yt-iframe-script')) {
       const tag = document.createElement('script');
       tag.id = 'yt-iframe-script';
@@ -78,14 +80,24 @@ export const YouTubeEngineHost: React.FC = () => {
 
             if (state === window.YT?.PlayerState?.PLAYING) {
               usePlayerStore.setState({ isPlaying: true, isSeeking: false });
-            } else if (
-              state === window.YT?.PlayerState?.PAUSED ||
-              state === window.YT?.PlayerState?.ENDED
-            ) {
-              usePlayerStore.setState({ isPlaying: false });
-              if (state === window.YT?.PlayerState?.ENDED) {
-                handleEpisodeComplete();
+            } else if (state === window.YT?.PlayerState?.PAUSED) {
+              const currentStore = usePlayerStore.getState();
+              // Nếu người dùng không chủ động bấm pause (mà do tab bị ẩn, thoát app, tắt màn hình)
+              if (currentStore.isPlaying && !currentStore.isExplicitlyPaused) {
+                console.debug('[YouTubeEngineHost] Background interruption detected. Resuming playback...');
+                setTimeout(() => {
+                  if (playerRef.current && usePlayerStore.getState().isPlaying && !usePlayerStore.getState().isExplicitlyPaused) {
+                    try {
+                      playerRef.current.playVideo();
+                    } catch {}
+                  }
+                }, 100);
+              } else {
+                usePlayerStore.setState({ isPlaying: false });
               }
+            } else if (state === window.YT?.PlayerState?.ENDED) {
+              usePlayerStore.setState({ isPlaying: false });
+              handleEpisodeComplete();
             }
 
             rateCoordinator.onStateChange(state, stateName);
@@ -129,12 +141,41 @@ export const YouTubeEngineHost: React.FC = () => {
       }, 100);
     }
 
+    // 3. Listener duy trì phát audio chạy ngầm khi ẩn tab, chuyển app hoặc khóa màn hình
+    const handleVisibilityChange = () => {
+      const store = usePlayerStore.getState();
+      if (document.hidden) {
+        // App / Tab chuyển sang chạy nền
+        if (store.isPlaying && !store.isExplicitlyPaused) {
+          startBackgroundAudio();
+          if (playerRef.current) {
+            try {
+              playerRef.current.playVideo();
+            } catch {}
+          }
+        }
+      } else {
+        // App quay trở lại màn hình chính
+        if (store.isPlaying && !store.isExplicitlyPaused && playerRef.current) {
+          try {
+            const ytState = playerRef.current.getPlayerState?.();
+            if (ytState !== 1) {
+              playerRef.current.playVideo();
+            }
+          } catch {}
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       rateCoordinator.detachPlayer(instanceId);
       playerRef.current = null;
       isInitializingRef.current = false;
     };
-  }, [handleEpisodeComplete, nextEpisode, prevEpisode, setYtInstance, skipSeconds, togglePlay]);
+  }, [handleEpisodeComplete, nextEpisode, pause, prevEpisode, resume, setYtInstance, skipSeconds]);
 
   return (
     <div
@@ -143,12 +184,11 @@ export const YouTubeEngineHost: React.FC = () => {
         position: 'fixed',
         bottom: '0px',
         right: '0px',
-        width: '200px',
-        height: '200px',
-        clipPath: 'inset(100%)',
-        opacity: 1,
+        width: '2px',
+        height: '2px',
+        opacity: 0.01,
         pointerEvents: 'none',
-        zIndex: -1,
+        zIndex: 1,
       }}
     >
       <div id="yt-player-target" />

@@ -109,13 +109,14 @@ export const audioService = {
     const enrichAudioEpisodes = (audioItem: AudioItem): AudioItem => {
       if (audioItem.episodes && audioItem.episodes.length > 0) {
         const isVipAudio = Boolean(audioItem.isVIPOnly || audioItem.isVipOnly);
-        const totalEps = audioItem.episodes.length;
+        const freeLimit = audioItem.freeEpisodesCount !== undefined ? audioItem.freeEpisodesCount : 1;
         audioItem.episodes = audioItem.episodes.map((ep) => {
           const epIsVip = isVipAudio || Boolean(ep.isVip);
+          const isLocked = epIsVip && !isVipOrAdmin && (ep.episodeNumber > freeLimit || freeLimit === 0);
           return {
             ...ep,
             isVip: epIsVip,
-            isLocked: epIsVip && !isVipOrAdmin && (totalEps <= 1 || ep.episodeNumber > 1),
+            isLocked,
           };
         });
       }
@@ -395,7 +396,7 @@ export const audioService = {
       return {
         ...ep,
         isVip,
-        isLocked: isVip && !isVipOrAdmin && (totalEps <= 1 || ep.episodeNumber > 1),
+        isLocked: isVip && !isVipOrAdmin && ep.episodeNumber > 1,
       };
     });
 

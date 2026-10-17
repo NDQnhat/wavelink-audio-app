@@ -373,13 +373,23 @@ func TestEndToEndAPI(t *testing.T) {
 			t.Fatalf("Failed to mark audio as VIP: %d", setVipW.Code)
 		}
 
-		// A. Khách (không token) cố nghe truyện VIP -> 403 Forbidden
+		// A. Khách (không token) vào truyện VIP -> 200 OK, xem được tập 1 free, tập 2 khóa
 		guestReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/audios/%.0f", targetAudioID), nil)
 		guestW := httptest.NewRecorder()
 		app.ServeHTTP(guestW, guestReq)
 
-		if guestW.Code != http.StatusForbidden {
-			t.Fatalf("Expected 403 Forbidden for guest accessing VIP audio, got %d: %s", guestW.Code, guestW.Body.String())
+		if guestW.Code != http.StatusOK {
+			t.Fatalf("Expected 200 OK for guest accessing VIP audio, got %d: %s", guestW.Code, guestW.Body.String())
+		}
+		var guestRes response.Envelope
+		_ = json.Unmarshal(guestW.Body.Bytes(), &guestRes)
+		guestData := guestRes.Data.(map[string]interface{})
+		epsList, ok := guestData["episodes"].([]interface{})
+		if ok && len(epsList) > 0 {
+			ep1 := epsList[0].(map[string]interface{})
+			if ep1["isLocked"] == true {
+				t.Fatalf("Expected Episode 1 to be free (isLocked: false) for guest, got %+v", ep1)
+			}
 		}
 
 		// B. Admin truy cập truyện VIP -> 200 OK
@@ -562,14 +572,14 @@ func TestEndToEndAPI(t *testing.T) {
 		_ = json.Unmarshal(loginW.Body.Bytes(), &loginRes)
 		user123Token = loginRes.Data.(map[string]interface{})["token"].(string)
 
-		// Verify user123 (free user) cannot access VIP audio with 1 episode (403 Forbidden)
+		// Verify user123 (free user) can access VIP audio (episode 1 is free)
 		db.Where("audio_id = ? AND episode_number > 1", targetAudioID).Delete(&domain.Episode{})
 		vipAccessReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/audios/%.0f", targetAudioID), nil)
 		vipAccessReq.Header.Set("Authorization", "Bearer "+user123Token)
 		vipAccessW := httptest.NewRecorder()
 		app.ServeHTTP(vipAccessW, vipAccessReq)
-		if vipAccessW.Code != http.StatusForbidden {
-			t.Fatalf("Expected 403 Forbidden for free user accessing 1-episode VIP audio, got %d", vipAccessW.Code)
+		if vipAccessW.Code != http.StatusOK {
+			t.Fatalf("Expected 200 OK for free user accessing VIP audio, got %d", vipAccessW.Code)
 		}
 
 		// Create VIP 1 Month Order

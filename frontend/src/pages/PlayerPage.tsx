@@ -48,6 +48,26 @@ export const PlayerPage: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [scrubPercent, setScrubPercent] = useState<number | null>(null);
   const [episodePage, setEpisodePage] = useState(1);
+  const [syncedRecentInfo, setSyncedRecentInfo] = useState<{ position: string; epNumber: number } | null>(null);
+  const [isSeekLocked, setIsSeekLocked] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('wavelink_seek_locked') === 'true';
+    }
+    return false;
+  });
+
+  const toggleSeekLock = () => {
+    const nextVal = !isSeekLocked;
+    setIsSeekLocked(nextVal);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('wavelink_seek_locked', String(nextVal));
+    }
+    if (nextVal) {
+      toast.info('Đã khóa thanh tua thời lượng! Chống chạm nhầm khi nghe.');
+    } else {
+      toast.success('Đã mở khóa thanh tua thời lượng.');
+    }
+  };
 
   if (isLoading) {
     return <LoadingState message="Đang tải thông tin trình phát..." />;
@@ -70,14 +90,43 @@ export const PlayerPage: React.FC = () => {
   const isTargetAudioPlaying = currentAudio?.id === audio.id;
   const isVipOrAdmin = user?.role === 'VIP' || user?.role === 'ADMIN' || user?.membership === 'VIP';
   const isVipAudio = Boolean(audio.isVIPOnly || audio.isVipOnly);
-  const totalEpisodesCount = audio.totalEpisodes || audio.episodes?.length || 1;
+  const isGuest = !user || user.isGuest || user.role === 'GUEST';
+
+  // 1. Tự động đồng bộ mốc nghe gần nhất mỗi 60 giây khi đang phát audio này
+  React.useEffect(() => {
+    if (!isTargetAudioPlaying || !isPlaying) return;
+
+    const interval = setInterval(() => {
+      if (currentTime > 0) {
+        setSyncedRecentInfo({
+          position: formatTime(currentTime),
+          epNumber: currentEpisode?.episodeNumber || 1,
+        });
+        if (audio?.id) {
+          queryClient.invalidateQueries({ queryKey: ['audio', audio.id] });
+        }
+      }
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [isTargetAudioPlaying, isPlaying, currentTime, currentEpisode, audio?.id, queryClient]);
 
   const isEpLocked = (ep: { episodeNumber: number; isVip?: boolean; isLocked?: boolean }) => {
     if (isVipOrAdmin) return false;
     const isVip = isVipAudio || Boolean(ep.isVip);
     if (!isVip) return false;
-    if (totalEpisodesCount <= 1) return true;
-    return ep.episodeNumber > 1;
+    const freeLimit = audio.freeEpisodesCount !== undefined ? audio.freeEpisodesCount : 1;
+    return ep.episodeNumber > freeLimit || freeLimit === 0 || Boolean(ep.isLocked);
+  };
+
+  const handleLockedEpisodeAction = (customMsg?: string) => {
+    if (isGuest) {
+      toast.info(customMsg || 'Tập VIP chỉ dành cho thành viên. Vui lòng đăng nhập để nghe!');
+      navigate('/login');
+    } else {
+      toast.error(customMsg || 'Tập 2 trở đi chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói để tiếp tục nghe!');
+      navigate('/membership');
+    }
   };
 
   const activeEp =
@@ -104,12 +153,7 @@ export const PlayerPage: React.FC = () => {
 
   const handleMasterPlay = () => {
     if (isEpLocked(activeEp)) {
-      if (totalEpisodesCount <= 1) {
-        toast.error('Nội dung này độc quyền dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!');
-      } else {
-        toast.error('Tập 2 trở đi chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói để tiếp tục nghe!');
-      }
-      navigate('/membership');
+      handleLockedEpisodeAction();
       return;
     }
     if (isTargetAudioPlaying) {
@@ -126,12 +170,7 @@ export const PlayerPage: React.FC = () => {
       audio.episodes?.find((e) => (epId && e.id === epId) || e.episodeNumber === epNum) ||
       audio.episodes?.[0];
     if (targetEp && isEpLocked(targetEp)) {
-      if (totalEpisodesCount <= 1) {
-        toast.error('Nội dung này độc quyền dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!');
-      } else {
-        toast.error('Tập cần nghe tiếp chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!');
-      }
-      navigate('/membership');
+      handleLockedEpisodeAction('Tập cần nghe tiếp chỉ dành riêng cho thành viên VIP.');
       return;
     }
     if (targetEp) {
@@ -266,7 +305,7 @@ export const PlayerPage: React.FC = () => {
           <div className="flex flex-col min-w-0">
             <span className="text-[10px] font-extrabold uppercase text-gray-700">Mốc nghe gần nhất</span>
             <span className="text-xs font-bold text-black truncate">
-              Tiếp tục từ <strong>{audio.formattedPosition || '00:00:00'}</strong> (Tập {audio.currentEpisodeNumber || 1})
+              Tiếp tục từ <strong>{syncedRecentInfo?.position || audio.formattedPosition || '00:00:00'}</strong> (Tập {syncedRecentInfo?.epNumber || audio.currentEpisodeNumber || 1})
             </span>
           </div>
         </div>
@@ -291,30 +330,47 @@ export const PlayerPage: React.FC = () => {
           </span>
         </div>
 
-        {/* Custom Comic Range Slider (Scrub Bar) */}
+        {/* Custom Comic Range Slider (Scrub Bar) with Accidental Seek Lock */}
         <div className="flex flex-col gap-1.5 pt-1">
-          <Slider
-            value={currentPercent}
-            min={0}
-            max={100}
-            onChange={(e) => {
-              const val = parseFloat(e.target.value);
-              setScrubPercent(val);
-              const targetSec = Math.round((val / 100) * episodeDuration);
-              if (isTargetAudioPlaying) {
-                seekTo(targetSec);
-              } else {
-                play(audio, activeEp, targetSec);
-              }
-            }}
-            onPointerUp={() => setScrubPercent(null)}
-            onTouchEnd={() => setScrubPercent(null)}
-            onMouseUp={() => setScrubPercent(null)}
-          />
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <Slider
+                disabled={isSeekLocked}
+                value={currentPercent}
+                min={0}
+                max={100}
+                onChange={(e) => {
+                  if (isSeekLocked) return;
+                  const val = parseFloat(e.target.value);
+                  setScrubPercent(val);
+                  const targetSec = Math.round((val / 100) * episodeDuration);
+                  if (isTargetAudioPlaying) {
+                    seekTo(targetSec);
+                  } else {
+                    play(audio, activeEp, targetSec);
+                  }
+                }}
+                onPointerUp={() => setScrubPercent(null)}
+                onTouchEnd={() => setScrubPercent(null)}
+                onMouseUp={() => setScrubPercent(null)}
+                className={isSeekLocked ? 'cursor-not-allowed opacity-50' : ''}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={toggleSeekLock}
+              className={`w-8 h-8 rounded-lg border-2 border-black flex items-center justify-center text-sm shrink-0 transition-all shadow-comic-sm ${
+                isSeekLocked ? 'bg-[#E63946] text-white hover:bg-red-600' : 'bg-gray-100 text-gray-700 hover:bg-[#FFE600]'
+              }`}
+              title={isSeekLocked ? 'Mở khóa thanh tua thời lượng' : 'Khóa thanh tua thời lượng chống chạm nhầm'}
+            >
+              <i className={isSeekLocked ? 'ri-lock-2-fill' : 'ri-lock-unlock-line'} />
+            </button>
+          </div>
           <div className="flex items-center justify-between font-mono text-xs font-bold text-gray-700">
             <span>{formatTime(currentPosition)}</span>
-            <span className="badge-comic badge-comic-yellow text-[9px] py-0 px-1 font-mono">
-              Đã nghe {currentPercent}%
+            <span className={`badge-comic ${isSeekLocked ? 'badge-comic-red' : 'badge-comic-yellow'} text-[9px] py-0 px-1 font-mono`}>
+              {isSeekLocked ? '🔒 ĐÃ KHÓA TUA' : `Đã nghe ${currentPercent}%`}
             </span>
             <span>{formatTime(episodeDuration)}</span>
           </div>
@@ -384,8 +440,7 @@ export const PlayerPage: React.FC = () => {
               if (currIdx !== -1 && currIdx + 1 < eps.length) {
                 const nextEp = eps[currIdx + 1];
                 if (isEpLocked(nextEp)) {
-                  toast.error('Tập tiếp theo chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!');
-                  navigate('/membership');
+                  handleLockedEpisodeAction('Tập tiếp theo chỉ dành riêng cho thành viên VIP.');
                   return;
                 }
               }
@@ -444,8 +499,7 @@ export const PlayerPage: React.FC = () => {
                   key={ep.id}
                   onClick={() => {
                     if (epLocked) {
-                      toast.error('Tập 2 trở đi chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói để mở khóa toàn bộ!');
-                      navigate('/membership');
+                      handleLockedEpisodeAction();
                       return;
                     }
                     play(audio, ep, ep.positionSeconds || 0);

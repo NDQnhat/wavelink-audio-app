@@ -15,7 +15,7 @@ import { UserProfileData } from '@/types';
 export const ProfilePage: React.FC = () => {
   const { id: paramId } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, isLive, logout, refreshUser } = useAuthStore();
+  const { user, isLive, logout, refreshUser, isLoading, isInitialized } = useAuthStore();
   const { play } = usePlayerStore();
 
   // Kiểm tra xem đang xem hồ sơ người khác hay chính mình
@@ -136,13 +136,91 @@ export const ProfilePage: React.FC = () => {
     }
   };
 
+  // Skeleton Loader giữ nguyên toàn bộ khối/block/format, làm mờ nền (blur) cho đỡ chói mắt khi backend phản hồi chậm
+  const isOtherLoading = isViewingOther && loadingPublicUser;
+  const isOwnProfileLoading =
+    !isViewingOther &&
+    (isLoading || (!isInitialized && !user && Boolean(typeof localStorage !== 'undefined' && localStorage.getItem('auth_token'))));
+
+  if (isOtherLoading || isOwnProfileLoading) {
+    return (
+      <div className="flex flex-col w-full pb-36 px-4 gap-4 pt-2 fade-in-comic">
+        {isViewingOther && (
+          <div className="w-20 h-7 rounded bg-gray-200 border border-black animate-pulse" />
+        )}
+
+        {/* Profile Card Skeleton */}
+        <div className="card-comic p-4 bg-white/70 backdrop-blur-md flex flex-col gap-3 relative overflow-hidden border-2 border-black animate-pulse">
+          <div className="flex items-center gap-3">
+            {/* Avatar Skeleton */}
+            <div className="w-16 h-16 rounded-full border-2 border-black bg-gray-300 flex items-center justify-center shrink-0">
+              <i className="ri-loader-4-line text-2xl text-gray-400 animate-spin" />
+            </div>
+
+            {/* User Info Skeleton */}
+            <div className="flex flex-col gap-2 min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <div className="h-5 bg-gray-300 rounded-md w-36" />
+                <div className="h-4 bg-gray-300 rounded w-16" />
+              </div>
+              <div className="h-3.5 bg-gray-200 rounded w-48 mt-0.5" />
+              <div className="h-3 bg-gray-200 rounded w-28 mt-0.5" />
+            </div>
+          </div>
+
+          {/* Stats Overview Grid Skeleton */}
+          <div className="grid grid-cols-2 gap-2 pt-2 border-t-2 border-black mt-1">
+            <div className="card-comic-sm p-2.5 bg-gray-100 flex items-center gap-2 border border-black">
+              <div className="w-6 h-6 rounded-md bg-gray-300 shrink-0" />
+              <div className="flex flex-col gap-1.5 flex-1">
+                <div className="h-2.5 bg-gray-300 rounded w-16" />
+                <div className="h-3.5 bg-gray-300 rounded w-20" />
+              </div>
+            </div>
+
+            <div className="card-comic-sm p-2.5 bg-gray-100 flex items-center gap-2 border border-black">
+              <div className="w-6 h-6 rounded-md bg-gray-300 shrink-0" />
+              <div className="flex flex-col gap-1.5 flex-1">
+                <div className="h-2.5 bg-gray-300 rounded w-16" />
+                <div className="h-3.5 bg-gray-300 rounded w-20" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Stories / Activity Section Skeleton */}
+        <div className="card-comic p-4 bg-white/70 backdrop-blur-md flex flex-col gap-3 border-2 border-black animate-pulse">
+          <div className="flex items-center justify-between pb-1.5 border-b-2 border-black">
+            <div className="h-4 bg-gray-300 rounded w-32" />
+            <div className="h-3.5 bg-gray-200 rounded w-16" />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {[1, 2, 3].map((idx) => (
+              <div
+                key={idx}
+                className="card-comic-sm p-3 bg-gray-50 flex items-center justify-between gap-3 border border-gray-300"
+              >
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <div className="w-10 h-12 rounded border border-gray-300 bg-gray-200 shrink-0" />
+                  <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+                    <div className="h-3.5 bg-gray-300 rounded w-3/4" />
+                    <div className="h-2.5 bg-gray-200 rounded w-1/2" />
+                  </div>
+                </div>
+                <div className="w-14 h-6 rounded bg-gray-200 border border-gray-300 shrink-0" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ========================================================
   // 1. GIAO DIỆN HỒ SƠ CÔNG KHAI CỦA NGƯỜI DÙNG KHÁC (/profile/:id)
   // ========================================================
   if (isViewingOther) {
-    if (loadingPublicUser) {
-      return <LoadingState message="Đang tải hồ sơ độc giả..." />;
-    }
 
     if (!publicUser) {
       return (

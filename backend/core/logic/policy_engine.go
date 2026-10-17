@@ -26,30 +26,12 @@ func CanImportYouTube(user domain.User, todayImportCount int) (bool, string) {
 	return true, ""
 }
 
-// CanAccessAudio kiểm tra quyền truy cập truyện (Khách vãng lai bị chặn nếu truyện là VIP, hoặc user thường nếu truyện chỉ có 1 tập)
+// CanAccessAudio kiểm tra quyền truy cập truyện (Cho phép tất cả người dùng kể cả khách vãng lai vào xem và nghe thử tập 1)
 func CanAccessAudio(user domain.User, audio domain.Audio) (bool, string) {
-	if !audio.IsVIPOnly {
-		return true, ""
-	}
-
-	if user.Role == domain.RoleAdmin || user.Role == domain.RoleVIP || user.Membership == domain.MembershipVIP {
-		return true, ""
-	}
-
-	if user.IsGuest || user.Role == domain.RoleGuest {
-		return false, "Nội dung này dành riêng cho thành viên VIP. Vui lòng đăng nhập hoặc nâng cấp gói để tiếp tục nghe."
-	}
-
-	// Nếu audio VIP chỉ có đúng 1 tập -> Không có tập 2 trở đi để áp dụng khóa -> Chặn toàn bộ user thường
-	if audio.TotalEpisodes == 1 || (len(audio.Episodes) == 1) {
-		return false, "Nội dung này dành riêng cho thành viên VIP. Vui lòng nâng cấp gói để tiếp tục nghe."
-	}
-
-	// User thường (FREE) được phép vào xem trang audio để nghe thử tập 1 nếu truyện có từ 2 tập trở lên
 	return true, ""
 }
 
-// CanAccessEpisode kiểm tra quyền nghe từng tập audio (tập 1 miễn phí nghe thử nếu truyện có >1 tập, tập 2+ khóa nếu là VIP)
+// CanAccessEpisode kiểm tra quyền nghe từng tập audio (tập 1..freeCount miễn phí nghe thử, các tập sau khóa nếu là VIP)
 func CanAccessEpisode(user domain.User, audio domain.Audio, episode domain.Episode) (bool, string) {
 	if !audio.IsVIPOnly && !episode.IsVIP {
 		return true, ""
@@ -59,20 +41,23 @@ func CanAccessEpisode(user domain.User, audio domain.Audio, episode domain.Episo
 		return true, ""
 	}
 
-	if user.IsGuest || user.Role == domain.RoleGuest {
-		return false, "Nội dung này dành riêng cho hội viên. Vui lòng đăng nhập để nghe thử tập 1 hoặc nâng cấp VIP."
+	// Số tập miễn phí nghe thử (mặc định là 1 nếu nil, nếu set = 0 thì khóa toàn bộ)
+	freeCount := 1
+	if audio.FreeEpisodesCount != nil {
+		freeCount = *audio.FreeEpisodesCount
 	}
 
-	// Nếu audio chỉ có 1 tập duy nhất và là VIP -> Khóa đối với user thường
-	if (audio.TotalEpisodes == 1 || len(audio.Episodes) == 1) && (audio.IsVIPOnly || episode.IsVIP) {
-		return false, "Nội dung này dành riêng cho thành viên VIP. Vui lòng nâng cấp gói để nghe."
+	// Nếu tập nằm trong số tập cho phép nghe thử miễn phí
+	if freeCount > 0 && episode.EpisodeNumber <= freeCount {
+		return true, ""
 	}
 
-	if episode.EpisodeNumber <= 1 {
-		return true, "" // Xem trước 1 tập đầu tiên khi truyện có từ 2 tập trở lên
+	// Các tập VIP yêu cầu tài khoản thành viên
+	if user.IsGuest || user.Role == domain.RoleGuest || user.ID == 0 {
+		return false, "Tập VIP chỉ dành cho thành viên. Vui lòng đăng nhập để tiếp tục nghe."
 	}
 
-	return false, "Tập 2 trở đi chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói để tiếp tục nghe."
+	return false, "Tập VIP chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói để tiếp tục nghe."
 }
 
 // CanManageContent kiểm tra quyền chỉnh sửa audio, tập, phân mục

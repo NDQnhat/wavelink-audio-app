@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import { User, LoginPayload, RegisterPayload, GoogleLoginPayload } from '@/types';
 import { api } from '@/services/api';
-import { usePlayerStore } from '@/stores/playerStore';
+import { usePlayerStore, setCurrentPlayerUserId } from '@/stores/playerStore';
 import { guestSessionService } from '@/services/guestSessionService';
 import { queryClient } from '@/lib/queryClient';
 import { toast } from '@/components/ui/Toast';
+import { stopBackgroundAudio } from '@/lib/backgroundAudioKeeper';
+import { stopBackgroundSleepTimer } from '@/lib/sleepTimerWorker';
 
 interface AuthState {
   user: User | null;
@@ -44,6 +46,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           if (typeof localStorage !== 'undefined') {
             localStorage.setItem('auth_user', JSON.stringify(user));
           }
+          setCurrentPlayerUserId(user.id);
           usePlayerStore.getState().syncUserPlaybackRate(user.id);
           return;
         }
@@ -58,6 +61,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           const cachedUser = JSON.parse(cachedUserStr);
           if (cachedUser && cachedUser.id) {
             set({ user: cachedUser, token: storedToken });
+            setCurrentPlayerUserId(cachedUser.id);
             usePlayerStore.getState().syncUserPlaybackRate(cachedUser.id);
             return;
           }
@@ -75,6 +79,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         localStorage.removeItem('auth_token');
         localStorage.setItem('auth_user', JSON.stringify(guestUser));
       }
+      setCurrentPlayerUserId(null);
       set({ user: guestUser, token: null });
       usePlayerStore.getState().syncUserPlaybackRate('guest');
     } catch (err) {
@@ -92,6 +97,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem('auth_user', JSON.stringify(res.user));
       }
+      setCurrentPlayerUserId(res.user.id);
       usePlayerStore.getState().syncUserPlaybackRate(res.user.id);
 
       // Tự động chuyển tiến trình và lịch sử thao tác của khách trong sessionStorage sang tài khoản user trong DB
@@ -135,6 +141,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         if (typeof localStorage !== 'undefined') {
           localStorage.setItem('auth_user', JSON.stringify(res.user));
         }
+        setCurrentPlayerUserId(res.user.id);
         usePlayerStore.getState().syncUserPlaybackRate(res.user.id);
         const { progressCount, historyCount } = await guestSessionService.migrateGuestSessionToUser();
         if (progressCount > 0 || historyCount > 0) {
@@ -157,6 +164,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         localStorage.setItem('auth_token', mockToken);
         localStorage.setItem('auth_user', JSON.stringify(googleUser));
         set({ user: googleUser, token: mockToken });
+        setCurrentPlayerUserId(googleUser.id);
         usePlayerStore.getState().syncUserPlaybackRate(googleUser.id);
         const { progressCount, historyCount } = await guestSessionService.migrateGuestSessionToUser();
         if (progressCount > 0 || historyCount > 0) {
@@ -174,6 +182,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       localStorage.removeItem('auth_token');
       localStorage.removeItem('auth_user');
+      setCurrentPlayerUserId(null);
       const guestUser: User = { id: 0, username: 'Khách Nghe Thử', role: 'GUEST', isGuest: true };
       set({ user: guestUser, token: null });
       usePlayerStore.getState().syncUserPlaybackRate('guest');
@@ -184,14 +193,52 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
-    await api.auth.logout();
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
+    // 1. Dừng phát âm thanh ngay lập tức và reset sạch trạng thái player (tắt mini player dưới nav)
+    try {
+      usePlayerStore.getState().reset();
+      setCurrentPlayerUserId(null);
+    } catch (e) {
+      console.warn('Error resetting player store on logout:', e);
+    }
+
+    // 2. Dừng background audio keeper và background sleep timer nếu đang chạy
+    try {
+      stopBackgroundAudio();
+      stopBackgroundSleepTimer();
+    } catch {}
+
+    // 3. Gọi api logout nếu có backend
+    try {
+      await api.auth.logout();
+    } catch {}
+
+    // 4. Xóa sạch token, user profile, web cache và storage cũ
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+      localStorage.removeItem('wavelink_sleep_timer_end');
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('comic_audio_user_speed_') || k.startsWith('wavelink_cache_'))) {
+            keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+      } catch {}
+    }
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.clear();
+    }
     guestSessionService.clearGuestSession();
+
+    // 5. Xóa toàn bộ cache dữ liệu của React Query (xóa sạch vết user cũ, không lưu lẫn lộn sang acc khác)
+    queryClient.clear();
+
     const guestUser: User = { id: 0, username: 'Khách Nghe Thử', role: 'GUEST', isGuest: true };
     set({ user: guestUser, token: null });
     usePlayerStore.getState().syncUserPlaybackRate('guest');
-    queryClient.invalidateQueries();
   },
 
   refreshUser: async () => {

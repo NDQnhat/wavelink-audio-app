@@ -137,6 +137,10 @@ func AutoMigrate(db *gorm.DB) error {
 	if !m.HasColumn(&domain.Audio{}, "created_by") {
 		_ = m.AddColumn(&domain.Audio{}, "created_by")
 	}
+	if !m.HasColumn(&domain.Audio{}, "free_episodes_count") {
+		_ = m.AddColumn(&domain.Audio{}, "free_episodes_count")
+		db.Model(&domain.Audio{}).Where("free_episodes_count = 0 OR free_episodes_count IS NULL").Update("free_episodes_count", 1)
+	}
 	if !m.HasColumn(&domain.NotificationPreference{}, "external_audio") {
 		_ = m.AddColumn(&domain.NotificationPreference{}, "external_audio")
 	}

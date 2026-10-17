@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAudios, useUpdateAudio, useDeleteAudio } from '@/hooks/useAudio';
+import { useCategories } from '@/hooks/useCategories';
 import { AudioItem } from '@/types';
 import { AdminTabs } from './AdminTabs';
 import { Modal } from '@/components/ui/Modal';
@@ -14,6 +15,7 @@ export const AdminAudiosPage: React.FC = () => {
   const [search, setSearch] = useState('');
 
   const { data: audios = [], isLoading } = useAudios();
+  const { data: categories = [] } = useCategories();
   const updateAudioMutation = useUpdateAudio();
   const deleteAudioMutation = useDeleteAudio();
 
@@ -21,7 +23,10 @@ export const AdminAudiosPage: React.FC = () => {
   const [editTitle, setEditTitle] = useState('');
   const [editAuthor, setEditAuthor] = useState('');
   const [editDesc, setEditDesc] = useState('');
+  const [editCategoryId, setEditCategoryId] = useState<number>(1);
+  const [editTags, setEditTags] = useState('');
   const [editVip, setEditVip] = useState(false);
+  const [editFreeEpisodesCount, setEditFreeEpisodesCount] = useState<number>(1);
 
   const [deletingAudioId, setDeletingAudioId] = useState<number | null>(null);
 
@@ -48,7 +53,10 @@ export const AdminAudiosPage: React.FC = () => {
     setEditTitle(a.title);
     setEditAuthor(a.author || '');
     setEditDesc(a.description || '');
+    setEditCategoryId(a.categoryId || categories[0]?.id || 1);
+    setEditTags((a.tags || []).join(', '));
     setEditVip(Boolean(a.isVIPOnly || a.isVipOnly));
+    setEditFreeEpisodesCount(a.freeEpisodesCount !== undefined ? a.freeEpisodesCount : 1);
   };
 
   const handleSaveEdit = async () => {
@@ -59,14 +67,22 @@ export const AdminAudiosPage: React.FC = () => {
     }
     try {
       toast.info('Đang cập nhật audio...');
+      const tagsArray = editTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
+
       await updateAudioMutation.mutateAsync({
         id: editingAudio.id,
         data: {
           title: editTitle.trim(),
           author: editAuthor.trim(),
           description: editDesc.trim(),
+          categoryId: editCategoryId,
+          tags: tagsArray,
           isVIPOnly: editVip,
           isVipOnly: editVip,
+          freeEpisodesCount: editVip ? Math.max(0, Number(editFreeEpisodesCount)) : 1,
         },
       });
       toast.success('Cập nhật audio thành công!');
@@ -237,7 +253,7 @@ export const AdminAudiosPage: React.FC = () => {
         confirmText="Lưu Thay Đổi"
         onConfirm={handleSaveEdit}
       >
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2.5">
           <div className="flex flex-col gap-0.5">
             <label className="font-extrabold text-[11px] uppercase text-black">Tiêu đề truyện</label>
             <input
@@ -257,6 +273,32 @@ export const AdminAudiosPage: React.FC = () => {
             />
           </div>
           <div className="flex flex-col gap-0.5">
+            <label className="font-extrabold text-[11px] uppercase text-black">Thể loại</label>
+            <select
+              value={editCategoryId}
+              onChange={(e) => setEditCategoryId(Number(e.target.value))}
+              className="input-comic text-xs py-1.5 bg-white cursor-pointer font-bold"
+            >
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <label className="font-extrabold text-[11px] uppercase text-black">
+              Thẻ Tags <span className="text-gray-500 font-normal">(Phân cách bằng dấu phẩy)</span>
+            </label>
+            <input
+              type="text"
+              value={editTags}
+              onChange={(e) => setEditTags(e.target.value)}
+              placeholder="tiên hiệp, tu tiên, audio..."
+              className="input-comic text-xs py-1.5 font-bold"
+            />
+          </div>
+          <div className="flex flex-col gap-0.5">
             <label className="font-extrabold text-[11px] uppercase text-black">Mô tả tóm tắt</label>
             <textarea
               value={editDesc}
@@ -264,17 +306,40 @@ export const AdminAudiosPage: React.FC = () => {
               className="input-comic text-xs h-16 py-1.5 resize-none"
             />
           </div>
-          <div className="flex items-center gap-2 pt-1">
-            <input
-              id="edit-audio-vip-box"
-              type="checkbox"
-              checked={editVip}
-              onChange={(e) => setEditVip(e.target.checked)}
-              className="w-4 h-4 border-2 border-black rounded accent-[#8338EC] cursor-pointer"
-            />
-            <label htmlFor="edit-audio-vip-box" className="text-xs font-bold text-black cursor-pointer">
-              Độc quyền cho thành viên VIP
-            </label>
+
+          {/* VIP Toggle & Free Episodes Limit */}
+          <div className="flex flex-col gap-2 p-2.5 rounded-lg border-2 border-black bg-[#FEF9C3] mt-1 shadow-comic-sm">
+            <div className="flex items-center gap-2">
+              <input
+                id="edit-audio-vip-box"
+                type="checkbox"
+                checked={editVip}
+                onChange={(e) => setEditVip(e.target.checked)}
+                className="w-4 h-4 border-2 border-black rounded accent-[#8338EC] cursor-pointer"
+              />
+              <label htmlFor="edit-audio-vip-box" className="text-xs font-black text-black cursor-pointer flex items-center gap-1">
+                <i className="ri-vip-crown-fill text-[#8338EC]" /> Độc quyền cho thành viên VIP
+              </label>
+            </div>
+
+            {editVip && (
+              <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-black/20">
+                <div className="flex flex-col">
+                  <span className="text-[11px] font-extrabold text-black">Số tập cho xem/nghe thử FREE:</span>
+                  <span className="text-[10px] font-medium text-gray-600">
+                    Mặc định 1 tập. Nhập 0 để khóa toàn bộ, hoặc 2+ để mở thêm tập nghe thử.
+                  </span>
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  max="1000"
+                  value={editFreeEpisodesCount}
+                  onChange={(e) => setEditFreeEpisodesCount(Math.max(0, parseInt(e.target.value) || 0))}
+                  className="input-comic text-xs py-1 px-2 w-20 text-center font-black bg-white"
+                />
+              </div>
+            )}
           </div>
         </div>
       </Modal>

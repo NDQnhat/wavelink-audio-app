@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { useUnreadNotificationCount } from '@/hooks/useNotifications';
 
-export const Header: React.FC = () => {
+export const Header: React.FC = React.memo(() => {
   const navigate = useNavigate();
-  const { user, isLive } = useAuthStore();
+  const { user, isLive, isInitialized } = useAuthStore();
   const { data: unreadCount = 0 } = useUnreadNotificationCount();
+
+  const displayName = user?.username || (!isInitialized ? '...' : user?.isGuest ? 'Khách' : 'Độc Giả');
 
   return (
     <header className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-50 bg-[#FFFFFF] border-b-2 border-black shadow-[0_2px_0_#000] pt-safe">
@@ -18,7 +20,6 @@ export const Header: React.FC = () => {
         >
           <div className="w-8 h-8 rounded-lg border-2 border-black bg-[#FFE600] text-black flex items-center justify-center font-black shadow-comic-sm">
             <i className="ri-headphone-fill text-lg" />
-            {/* <link rel="stylesheet" href=".//public/wavelink-icon.png" /> */}
           </div>
           <div className="flex flex-col min-w-0">
             <span className="font-extrabold text-sm uppercase tracking-tight text-black leading-tight flex items-center gap-1.5">
@@ -32,7 +33,7 @@ export const Header: React.FC = () => {
               </span>
             </span>
             <span className="text-[10px] font-bold text-gray-500 truncate leading-tight">
-             <strong className="font-black text-black" > {user?.username || 'Guest'}</strong> đang trực tuyến
+             <strong className="font-black text-black"> {displayName}</strong> đang trực tuyến
             </span>
           </div>
         </div>
@@ -71,5 +72,5 @@ export const Header: React.FC = () => {
       </div>
     </header>
   );
-};
+});
 

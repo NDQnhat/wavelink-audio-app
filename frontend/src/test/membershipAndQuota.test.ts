@@ -297,9 +297,9 @@ describe('VIP Membership & YouTube Import Quota & Episode Lock', () => {
       expect(loadedAudio?.episodes![1].isLocked).toBe(false);
     });
 
-    it('locks 1-episode VIP audio completely for regular user', async () => {
-      const freeUser: User = { id: 900, username: 'free_listener_2', role: 'USER', membership: 'FREE', isGuest: false };
-      useAuthStore.setState({ user: freeUser });
+    it('allows regular user and guest to listen to episode 1 free on VIP audio', async () => {
+      const guestUser: User = { id: 0, username: 'Khách Nghe Thử', role: 'GUEST', isGuest: true };
+      useAuthStore.setState({ user: guestUser });
 
       const singleEpVipAudio: AudioItem = {
         id: 7777,
@@ -335,8 +335,8 @@ describe('VIP Membership & YouTube Import Quota & Episode Lock', () => {
       const loadedAudio = await audioService.getAudioById(7777, false);
       expect(loadedAudio).toBeDefined();
       expect(loadedAudio?.episodes).toHaveLength(1);
-      // Because totalEpisodes <= 1, Episode 1 is locked for regular user!
-      expect(loadedAudio?.episodes![0].isLocked).toBe(true);
+      // Episode 1 is ALWAYS free for guest and regular user!
+      expect(loadedAudio?.episodes![0].isLocked).toBe(false);
     });
   });
 

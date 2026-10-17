@@ -2,6 +2,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import { NotificationPreferences } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
+import { playNotificationSound } from '@/lib/soundEffects';
+
+let prevUnreadCount: number | null = null;
 
 export function useNotifications() {
   const { isLive } = useAuthStore();
@@ -15,7 +18,14 @@ export function useUnreadNotificationCount() {
   const { isLive } = useAuthStore();
   return useQuery({
     queryKey: ['unread-notification-count', isLive],
-    queryFn: () => api.notification.getUnreadCount(isLive),
+    queryFn: async () => {
+      const count = await api.notification.getUnreadCount(isLive);
+      if (prevUnreadCount !== null && count > prevUnreadCount) {
+        playNotificationSound();
+      }
+      prevUnreadCount = count;
+      return count;
+    },
     refetchInterval: 30000,
   });
 }

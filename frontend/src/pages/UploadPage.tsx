@@ -25,6 +25,7 @@ export const UploadPage: React.FC = () => {
   const [durationInput, setDurationInput] = useState('');
   const [blockSize, setBlockSize] = useState<number>(14400);
   const [isVipOnly, setIsVipOnly] = useState(false);
+  const [freeEpisodesCount, setFreeEpisodesCount] = useState<number>(1);
 
   const [isChecking, setIsChecking] = useState(false);
   const [previewData, setPreviewData] = useState<YouTubePreviewData | null>(null);
@@ -43,6 +44,51 @@ export const UploadPage: React.FC = () => {
       setCategoryId(categories[0].id);
     }
   }, [categories, categoryId]);
+
+  const autoScanMetadata = (title: string, description?: string) => {
+    const text = `${title} ${description || ''}`.toLowerCase();
+
+    // 1. Quét và tự động chọn thể loại phù hợp nhất
+    if (categories.length > 0) {
+      let matchedCategory = categories.find((c) => text.includes(c.name.toLowerCase()));
+      if (!matchedCategory) {
+        if (text.includes('tiên hiệp') || text.includes('tu tiên') || text.includes('tu chân') || text.includes('huyền huyễn')) {
+          matchedCategory = categories.find((c) => c.slug.includes('tien-hiep') || c.name.toLowerCase().includes('tiên hiệp'));
+        } else if (text.includes('kiếm hiệp') || text.includes('võ hiệp') || text.includes('kim dung')) {
+          matchedCategory = categories.find((c) => c.slug.includes('kiem-hiep') || c.name.toLowerCase().includes('kiếm hiệp'));
+        } else if (text.includes('kinh dị') || text.includes('truyện ma') || text.includes('nguyễn ngọc ngạn') || text.includes('rùng rợn')) {
+          matchedCategory = categories.find((c) => c.slug.includes('kinh-di') || c.name.toLowerCase().includes('kinh dị'));
+        } else if (text.includes('ngôn tình') || text.includes('tình cảm') || text.includes('lãng mạn') || text.includes('sủng')) {
+          matchedCategory = categories.find((c) => c.slug.includes('ngon-tinh') || c.name.toLowerCase().includes('ngôn tình'));
+        } else if (text.includes('trinh thám') || text.includes('vụ án') || text.includes('thám tử')) {
+          matchedCategory = categories.find((c) => c.slug.includes('trinh-tham') || c.name.toLowerCase().includes('trinh thám'));
+        } else if (text.includes('sách nói') || text.includes('audiobook') || text.includes('kỹ năng') || text.includes('tâm lý')) {
+          matchedCategory = categories.find((c) => c.slug.includes('audiobook') || c.name.toLowerCase().includes('sách') || c.slug.includes('sach-noi'));
+        }
+      }
+      if (matchedCategory) {
+        setCategoryId(matchedCategory.id);
+      }
+    }
+
+    // 2. Quét và tự động gắn thẻ tags liên quan
+    const KEYWORD_TAGS = [
+      'Tiên Hiệp', 'Tu Tiên', 'Kiếm Hiệp', 'Kinh Dị', 'Truyện Ma',
+      'Ngôn Tình', 'Audiobook', 'Sách Nói', 'Trinh Thám', 'Huyền Huyễn',
+      'Đô Thị', 'Trọng Sinh', 'Xuyên Không', 'Hài Hước', 'Tổng Tài',
+      'Truyện Ngắn', 'Trọn Bộ', 'Full'
+    ];
+    const detectedTags: string[] = [];
+    for (const kw of KEYWORD_TAGS) {
+      if (text.includes(kw.toLowerCase())) {
+        detectedTags.push(kw);
+      }
+    }
+    if (detectedTags.length > 0) {
+      setTags((prev) => Array.from(new Set([...prev, ...detectedTags])));
+      toast.info(`Hệ thống đã tự động nhận diện và gắn thẻ: ${detectedTags.slice(0, 3).join(', ')}`);
+    }
+  };
 
   const checkURL = async (rawUrl: string) => {
     const trimmed = rawUrl.trim();
@@ -64,6 +110,7 @@ export const UploadPage: React.FC = () => {
       const data = await api.audio.previewYouTube(trimmed, isLive);
       if (data && data.title) {
         setPreviewData(data);
+        autoScanMetadata(data.title, data.description);
         if (data.formattedDuration && data.durationSeconds > 0) {
           setDurationInput(data.formattedDuration);
         } else if (data.durationSeconds > 0) {
@@ -207,6 +254,7 @@ export const UploadPage: React.FC = () => {
         blockSizeSeconds: blockSize,
         durationSeconds: dur,
         isVipOnly,
+        freeEpisodesCount: isVipOnly ? freeEpisodesCount : 1,
       });
 
       if (result.duplicate) {
@@ -518,21 +566,46 @@ export const UploadPage: React.FC = () => {
             </div>
           </div>
 
-          {/* VIP Only Checkbox */}
-          <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
-            <input
-              id="vip-only-checkbox"
-              type="checkbox"
-              checked={isVipOnly}
-              onChange={(e) => setIsVipOnly(e.target.checked)}
-              className="w-4 h-4 border-2 border-black rounded accent-[#8338EC] cursor-pointer"
-            />
-            <label htmlFor="vip-only-checkbox" className="text-xs font-bold text-black cursor-pointer flex items-center gap-1.5">
-              <span>Độc quyền dành riêng cho thành viên VIP</span>
-              <span className="badge-comic badge-comic-purple text-[8px] py-0 px-1">
-                <i className="ri-vip-crown-fill" /> VIP
-              </span>
-            </label>
+          {/* VIP Only Checkbox & Free Preview Setting */}
+          <div className="flex flex-col gap-2 pt-2 border-t border-gray-200">
+            <div className="flex items-center gap-2">
+              <input
+                id="vip-only-checkbox"
+                type="checkbox"
+                checked={isVipOnly}
+                onChange={(e) => setIsVipOnly(e.target.checked)}
+                className="w-4 h-4 border-2 border-black rounded accent-[#8338EC] cursor-pointer"
+              />
+              <label htmlFor="vip-only-checkbox" className="text-xs font-bold text-black cursor-pointer flex items-center gap-1.5">
+                <span>Độc quyền dành riêng cho thành viên VIP</span>
+                <span className="badge-comic badge-comic-purple text-[8px] py-0 px-1">
+                  <i className="ri-vip-crown-fill" /> VIP
+                </span>
+              </label>
+            </div>
+
+            {isVipOnly && (
+              <div className="card-comic-sm p-3 bg-[#FEF9C3] border-2 border-black flex flex-col gap-1.5 shadow-comic-sm ml-6">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-black text-black flex items-center gap-1">
+                      <i className="ri-gift-line text-[#E63946]" /> Số tập cho xem/nghe thử FREE:
+                    </span>
+                    <span className="text-[10px] font-medium text-gray-700">
+                      Mặc định là 1 tập. Nhập 0 để khóa toàn bộ, hoặc 2+ tập cho độc giả nghe thử.
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1000"
+                    value={freeEpisodesCount}
+                    onChange={(e) => setFreeEpisodesCount(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="input-comic text-xs py-1 px-2 w-20 text-center font-black bg-white"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

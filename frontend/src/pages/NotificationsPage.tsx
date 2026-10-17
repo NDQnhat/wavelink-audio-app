@@ -278,18 +278,19 @@ export const NotificationsPage: React.FC = () => {
               </div>
             ))}
 
-            {/* Phân trang lấy từ env VITE_ITEMS_PER_PAGE hoặc fallback 12 */}
-            <Pagination
-              currentPage={safeCurrentPage}
-              totalPages={totalPages}
-              totalItems={notifications.length}
-              pageSize={pageSize}
-              alwaysShow={true}
-              onPageChange={(p) => {
-                setCurrentPage(p);
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-            />
+            {/* Ẩn phân trang nếu danh sách có <= 12 phần tử để giao diện tối giản và sạch sẽ hơn */}
+            {notifications.length > 12 && (
+              <Pagination
+                currentPage={safeCurrentPage}
+                totalPages={totalPages}
+                totalItems={notifications.length}
+                pageSize={pageSize}
+                onPageChange={(p) => {
+                  setCurrentPage(p);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              />
+            )}
           </>
         )}
       </div>

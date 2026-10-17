@@ -84,6 +84,11 @@ func (h *Handler) GetEpisodesByAudioID(c *gin.Context) {
 		currentUser = domain.User{Role: domain.RoleGuest, IsGuest: true, Membership: domain.MembershipFree}
 	}
 
+	freeLimit := 1
+	if audio.FreeEpisodesCount != nil {
+		freeLimit = *audio.FreeEpisodesCount
+	}
+
 	isVipOrAdmin := currentUser.Role == domain.RoleAdmin || currentUser.Role == domain.RoleVIP || currentUser.Membership == domain.MembershipVIP
 	for i := range episodes {
 		if audio.IsVIPOnly {
@@ -91,7 +96,7 @@ func (h *Handler) GetEpisodesByAudioID(c *gin.Context) {
 		}
 		if audio.IsVIPOnly || episodes[i].IsVIP {
 			if !isVipOrAdmin {
-				if len(episodes) <= 1 || episodes[i].EpisodeNumber > 1 {
+				if episodes[i].EpisodeNumber > freeLimit || freeLimit == 0 {
 					episodes[i].IsLocked = true
 				} else {
 					episodes[i].IsLocked = false

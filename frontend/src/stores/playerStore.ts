@@ -5,6 +5,8 @@ import { rateCoordinator, RateSyncStatus } from '@/lib/playbackRateCoordinator';
 import { playerLogger } from '@/lib/playerLogger';
 import { useAuthStore } from '@/stores/authStore';
 import { toast } from '@/components/ui/Toast';
+import { startBackgroundAudio, stopBackgroundAudio } from '@/lib/backgroundAudioKeeper';
+import { startBackgroundSleepTimer, stopBackgroundSleepTimer } from '@/lib/sleepTimerWorker';
 
 // Global YouTube Player instance reference
 declare global {
@@ -125,6 +127,7 @@ interface PlayerState {
   currentAudio: AudioItem | null;
   currentEpisode: Episode | null;
   isPlaying: boolean;
+  isExplicitlyPaused: boolean;
   currentTime: number;
   duration: number;
   playbackRate: number; // Desired rate
@@ -132,6 +135,7 @@ interface PlayerState {
   rateSyncStatus: RateSyncStatus; // 'synced' | 'applying' | 'unsupported'
   isYtReady: boolean;
   sleepTimerMinutes: number | null;
+  sleepTimerEndTimestamp: number | null;
   isSeeking: boolean;
 
   // Actions
@@ -161,6 +165,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentAudio: null,
   currentEpisode: null,
   isPlaying: false,
+  isExplicitlyPaused: true,
   currentTime: 0,
   duration: 14400,
   playbackRate: initialStoredRate,
@@ -168,6 +173,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   rateSyncStatus: 'synced',
   isYtReady: false,
   sleepTimerMinutes: null,
+  sleepTimerEndTimestamp: null,
   isSeeking: false,
 
   setYtReady: (isYtReady: boolean) => set({ isYtReady }),
@@ -241,7 +247,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const totalEps = audio.totalEpisodes || audio.episodes?.length || 1;
 
     if (isVipAudio && !isVipOrAdmin) {
-      if (totalEps <= 1 || targetEpisode.episodeNumber > 1 || targetEpisode.isLocked) {
+      if (targetEpisode.episodeNumber > 1 || (targetEpisode.isLocked && targetEpisode.episodeNumber > 1)) {
         if (ytPlayerInstance && typeof ytPlayerInstance.pauseVideo === 'function') {
           try {
             ytPlayerInstance.pauseVideo();
@@ -250,10 +256,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         stopPolling();
         stopHeartbeat();
         set({ isPlaying: false });
-        if (totalEps <= 1) {
-          toast.error('Nội dung này độc quyền dành riêng cho thành viên VIP. Vui lòng nâng cấp gói để thưởng thức!');
+        if (!currentUser || currentUser.isGuest || currentUser.role === 'GUEST') {
+          toast.info('Tập VIP yêu cầu đăng nhập tài khoản. Vui lòng đăng nhập để nghe!');
+          if (typeof window !== 'undefined') {
+            window.location.hash = '#/login';
+          }
         } else {
           toast.error('Tập 2 trở đi chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói để tiếp tục nghe!');
+          if (typeof window !== 'undefined') {
+            window.location.hash = '#/membership';
+          }
         }
         return;
       }
@@ -287,6 +299,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentTime,
       duration,
       isPlaying: true,
+      isExplicitlyPaused: false,
       playbackRate: activeRate,
     });
 
@@ -309,6 +322,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     startPolling();
     startHeartbeat();
+    startBackgroundAudio();
     updateMediaSession(true, audio, targetEpisode);
   },
 
@@ -330,14 +344,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     const nextPlaying = !isPlaying;
-    set({ isPlaying: nextPlaying });
+    set({ isPlaying: nextPlaying, isExplicitlyPaused: !nextPlaying });
     if (nextPlaying) {
       startPolling();
       startHeartbeat();
+      startBackgroundAudio();
     } else {
       saveCurrentProgress();
       stopPolling();
       stopHeartbeat();
+      stopBackgroundAudio();
     }
     updateMediaSession(nextPlaying, currentAudio, get().currentEpisode);
   },
@@ -351,9 +367,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         // Ignore
       }
     }
-    set({ isPlaying: false });
+    set({ isPlaying: false, isExplicitlyPaused: true });
     stopPolling();
     stopHeartbeat();
+    stopBackgroundAudio();
     updateMediaSession(false, get().currentAudio, get().currentEpisode);
   },
 
@@ -366,9 +383,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         // Ignore
       }
     }
-    set({ isPlaying: true });
+    set({ isPlaying: true, isExplicitlyPaused: false });
     startPolling();
     startHeartbeat();
+    startBackgroundAudio();
     updateMediaSession(true, get().currentAudio, get().currentEpisode);
   },
 
@@ -513,20 +531,44 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   setSleepTimer: (minutes: number | null) => {
-    if (sleepTimeout) clearTimeout(sleepTimeout);
-
-    if (!minutes || minutes === 0) {
+    if (sleepTimeout) {
+      clearTimeout(sleepTimeout);
       sleepTimeout = null;
-      set({ sleepTimerMinutes: null });
+    }
+    stopBackgroundSleepTimer();
+
+    if (!minutes || minutes <= 0) {
+      set({ sleepTimerMinutes: null, sleepTimerEndTimestamp: null });
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('wavelink_sleep_timer_end');
+      }
       return;
     }
 
-    set({ sleepTimerMinutes: minutes });
-    sleepTimeout = setTimeout(() => {
-      get().pause();
-      set({ sleepTimerMinutes: null });
-      sleepTimeout = null;
-    }, minutes * 60 * 1000);
+    const endTimestamp = Date.now() + minutes * 60 * 1000;
+    set({ sleepTimerMinutes: minutes, sleepTimerEndTimestamp: endTimestamp });
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('wavelink_sleep_timer_end', String(endTimestamp));
+    }
+
+    const onExpire = () => {
+      const store = usePlayerStore.getState();
+      if (sleepTimeout) {
+        clearTimeout(sleepTimeout);
+        sleepTimeout = null;
+      }
+      stopBackgroundSleepTimer();
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('wavelink_sleep_timer_end');
+      }
+      usePlayerStore.setState({ sleepTimerMinutes: null, sleepTimerEndTimestamp: null });
+      store.pause();
+      stopBackgroundAudio();
+      toast.info('Đã tự động tắt audio theo hẹn giờ ngủ.');
+    };
+
+    sleepTimeout = setTimeout(onExpire, minutes * 60 * 1000);
+    startBackgroundSleepTimer(endTimestamp, onExpire);
   },
 
   close: () => {
@@ -540,13 +582,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
     stopPolling();
     stopHeartbeat();
-    if (sleepTimeout) clearTimeout(sleepTimeout);
+    stopBackgroundAudio();
+    stopBackgroundSleepTimer();
+    if (sleepTimeout) {
+      clearTimeout(sleepTimeout);
+      sleepTimeout = null;
+    }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('wavelink_sleep_timer_end');
+    }
     set({
       currentAudio: null,
       currentEpisode: null,
       isPlaying: false,
+      isExplicitlyPaused: true,
       currentTime: 0,
       sleepTimerMinutes: null,
+      sleepTimerEndTimestamp: null,
     });
     updateMediaSession(false, null, null);
   },
@@ -555,24 +607,35 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (ytPlayerInstance) {
       try {
         ytPlayerInstance.stopVideo?.();
+        ytPlayerInstance.pauseVideo?.();
       } catch {
         // Ignore
       }
     }
     stopPolling();
     stopHeartbeat();
-    if (sleepTimeout) clearTimeout(sleepTimeout);
+    stopBackgroundAudio();
+    stopBackgroundSleepTimer();
+    if (sleepTimeout) {
+      clearTimeout(sleepTimeout);
+      sleepTimeout = null;
+    }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('wavelink_sleep_timer_end');
+    }
     const storedRate = getStoredPlaybackRate();
     rateCoordinator.setDesiredRate(storedRate, 'store_reset');
     set({
       currentAudio: null,
       currentEpisode: null,
       isPlaying: false,
+      isExplicitlyPaused: true,
       currentTime: 0,
       playbackRate: storedRate,
       confirmedPlaybackRate: storedRate,
       rateSyncStatus: 'synced',
       sleepTimerMinutes: null,
+      sleepTimerEndTimestamp: null,
     });
     updateMediaSession(false, null, null);
   },
@@ -600,7 +663,17 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         stopPolling();
         stopHeartbeat();
         set({ isPlaying: false });
-        toast.error('Bạn đã xem xong tập 1 nghe thử. Tập 2 trở đi chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!');
+        if (!currentUser || currentUser.isGuest || currentUser.role === 'GUEST') {
+          toast.info('Bạn đã nghe xong tập 1 miễn phí. Tập tiếp theo là tập VIP, vui lòng đăng nhập để nghe tiếp!');
+          if (typeof window !== 'undefined') {
+            window.location.hash = '#/login';
+          }
+        } else {
+          toast.error('Bạn đã xem xong tập 1 nghe thử. Tập 2 trở đi chỉ dành riêng cho thành viên VIP. Vui lòng nâng cấp gói!');
+          if (typeof window !== 'undefined') {
+            window.location.hash = '#/membership';
+          }
+        }
         return;
       }
       setTimeout(() => {
@@ -633,6 +706,23 @@ function pollIntervalHandler() {
   const store = usePlayerStore.getState();
   if (!store.isPlaying) {
     watchdogDesyncCounter = 0;
+    return;
+  }
+
+  // Kiểm tra sleep timer theo mốc thời gian tuyệt đối (chạy nền đồng thời chuẩn xác)
+  if (store.sleepTimerEndTimestamp && Date.now() >= store.sleepTimerEndTimestamp) {
+    if (sleepTimeout) {
+      clearTimeout(sleepTimeout);
+      sleepTimeout = null;
+    }
+    stopBackgroundSleepTimer();
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('wavelink_sleep_timer_end');
+    }
+    usePlayerStore.setState({ sleepTimerMinutes: null, sleepTimerEndTimestamp: null });
+    store.pause();
+    stopBackgroundAudio();
+    toast.info('Đã tự động tắt audio theo hẹn giờ ngủ.');
     return;
   }
 

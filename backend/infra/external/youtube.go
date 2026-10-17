@@ -21,6 +21,7 @@ type YouTubeMetadata struct {
 	ThumbnailURL      string `json:"thumbnailUrl"`
 	DurationSeconds   int    `json:"durationSeconds"`
 	FormattedDuration string `json:"formattedDuration"`
+	Description       string `json:"description"`
 }
 
 type oEmbedResponse struct {
@@ -48,11 +49,12 @@ type innertubePlayerResponse struct {
 		Reason string `json:"reason"`
 	} `json:"playabilityStatus"`
 	VideoDetails struct {
-		VideoID       string `json:"videoId"`
-		Title         string `json:"title"`
-		LengthSeconds string `json:"lengthSeconds"`
-		Author        string `json:"author"`
-		Thumbnail     struct {
+		VideoID          string `json:"videoId"`
+		Title            string `json:"title"`
+		LengthSeconds    string `json:"lengthSeconds"`
+		Author           string `json:"author"`
+		ShortDescription string `json:"shortDescription"`
+		Thumbnail        struct {
 			Thumbnails []struct {
 				URL string `json:"url"`
 			} `json:"thumbnails"`
@@ -76,7 +78,7 @@ func FetchYouTubeMetadata(videoID string) (*YouTubeMetadata, error) {
 		return nil, fmt.Errorf("video ID rỗng")
 	}
 
-	var title, author, thumb string
+	var title, author, thumb, description string
 	var duration int
 
 	// Chiến lược 1: Thử gọi YouTube Data API v3 nếu có YOUTUBE_API_KEY
@@ -88,6 +90,7 @@ func FetchYouTubeMetadata(videoID string) (*YouTubeMetadata, error) {
 			title = meta.Title
 			author = meta.Author
 			thumb = meta.ThumbnailURL
+			description = meta.Description
 		}
 	}
 
@@ -101,6 +104,9 @@ func FetchYouTubeMetadata(videoID string) (*YouTubeMetadata, error) {
 		}
 		if thumb == "" && meta.ThumbnailURL != "" {
 			thumb = meta.ThumbnailURL
+		}
+		if description == "" && meta.Description != "" {
+			description = meta.Description
 		}
 		if meta.DurationSeconds > 0 {
 			duration = meta.DurationSeconds
@@ -158,6 +164,7 @@ func FetchYouTubeMetadata(videoID string) (*YouTubeMetadata, error) {
 		ThumbnailURL:      thumb,
 		DurationSeconds:   duration,
 		FormattedDuration: formattedDur,
+		Description:       description,
 	}, nil
 }
 
@@ -268,6 +275,7 @@ func fetchInnertubeProfiles(videoID string) *YouTubeMetadata {
 				ThumbnailURL:      thumb,
 				DurationSeconds:   lengthSec,
 				FormattedDuration: logic.FormatDuration(lengthSec),
+				Description:       strings.TrimSpace(innertubeResp.VideoDetails.ShortDescription),
 			}
 		}
 	}

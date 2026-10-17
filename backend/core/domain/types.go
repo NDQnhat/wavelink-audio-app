@@ -71,6 +71,7 @@ type Audio struct {
 	Category             *Category      `json:"category,omitempty" gorm:"foreignKey:CategoryID"`
 	Status               string         `json:"status" gorm:"size:20;default:'ACTIVE';index"`
 	IsVIPOnly            bool           `json:"isVipOnly" gorm:"column:is_vip_only;default:false"`
+	FreeEpisodesCount    *int           `json:"freeEpisodesCount" gorm:"column:free_episodes_count;default:1"`
 	CreatedBy            uint           `json:"createdBy" gorm:"column:created_by;index;default:0"`
 	CreatedAt            time.Time      `json:"createdAt"`
 	UpdatedAt            time.Time      `json:"updatedAt"`

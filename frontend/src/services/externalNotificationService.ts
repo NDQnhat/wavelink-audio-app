@@ -1,5 +1,6 @@
 import { notificationService } from './notificationService';
 import { audioService } from './audioService';
+import { playNotificationSound } from '@/lib/soundEffects';
 
 class ExternalNotificationService {
   private swRegistration: ServiceWorkerRegistration | null = null;
@@ -121,6 +122,9 @@ class ExternalNotificationService {
       data: { url: options.url || '/#/notifications' },
       renotify: false,
     };
+
+    // Phát âm thanh thông báo trên máy (Notification Sound Chime)
+    playNotificationSound();
 
     // Ưu tiên hiển thị qua Service Worker (hiển thị tốt ngay cả khi tab thu nhỏ hoặc cửa sổ ẩn)
     try {

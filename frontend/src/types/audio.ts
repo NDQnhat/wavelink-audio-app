@@ -38,6 +38,7 @@ export interface AudioItem {
   isFavorite?: boolean;
   isVIPOnly?: boolean;
   isVipOnly?: boolean;
+  freeEpisodesCount?: number;
   createdBy?: number;
   episodes?: Episode[];
   viewCount?: number;
@@ -64,6 +65,7 @@ export interface YouTubePreviewData {
   durationSeconds: number;
   formattedDuration: string;
   thumbnailUrl: string;
+  description?: string;
 }
 
 export interface ImportYouTubePayload {
@@ -73,6 +75,7 @@ export interface ImportYouTubePayload {
   blockSizeSeconds?: number;
   durationSeconds?: number;
   isVipOnly?: boolean;
+  freeEpisodesCount?: number;
 }
 
 export interface ImportResult {

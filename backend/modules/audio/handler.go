@@ -28,21 +28,24 @@ func NewHandler(db *gorm.DB) *Handler {
 }
 
 type ImportYouTubeRequest struct {
-	URL              string   `json:"url" binding:"required"`
-	CategoryID       uint     `json:"categoryId"`
-	Tags             []string `json:"tags"`
-	DurationSeconds  int      `json:"durationSeconds"`
-	BlockSizeSeconds int      `json:"blockSizeSeconds"`
-	IsVIPOnly        bool     `json:"isVipOnly"`
+	URL               string   `json:"url" binding:"required"`
+	CategoryID        uint     `json:"categoryId"`
+	Tags              []string `json:"tags"`
+	DurationSeconds   int      `json:"durationSeconds"`
+	BlockSizeSeconds  int      `json:"blockSizeSeconds"`
+	IsVIPOnly         bool     `json:"isVipOnly"`
+	FreeEpisodesCount *int     `json:"freeEpisodesCount"`
 }
 
 type UpdateAudioRequest struct {
-	Title       string `json:"title"`
-	Author      string `json:"author"`
-	Description string `json:"description"`
-	CategoryID  uint   `json:"categoryId"`
-	Status      string `json:"status"`
-	IsVIPOnly   *bool  `json:"isVipOnly"`
+	Title             string   `json:"title"`
+	Author            string   `json:"author"`
+	Description       string   `json:"description"`
+	CategoryID        uint     `json:"categoryId"`
+	Tags              []string `json:"tags"`
+	Status            string   `json:"status"`
+	IsVIPOnly         *bool    `json:"isVipOnly"`
+	FreeEpisodesCount *int     `json:"freeEpisodesCount"`
 }
 
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
@@ -297,10 +300,10 @@ func (h *Handler) GetAudioByID(c *gin.Context) {
 		if audio.IsVIPOnly {
 			episodes[i].IsVIP = true
 		}
-		// Khóa logic: nếu truyện chỉ có 1 tập -> khóa toàn bộ; nếu có nhiều tập -> khóa từ tập 2 trở đi
+		// Khóa logic: tập 1 luôn mở cho tất cả mọi người; nếu là truyện VIP/tập VIP thì khóa từ tập 2 trở đi đối với người dùng không phải VIP/Admin
 		if audio.IsVIPOnly || episodes[i].IsVIP {
 			if !isVipOrAdmin {
-				if len(episodes) <= 1 || episodes[i].EpisodeNumber > 1 {
+				if episodes[i].EpisodeNumber > 1 {
 					episodes[i].IsLocked = true
 				} else {
 					episodes[i].IsLocked = false
@@ -465,16 +468,26 @@ func (h *Handler) ImportYouTube(c *gin.Context) {
 	// 6. Transactional Persistence (GORM Atomic Transaction)
 	var newAudio domain.Audio
 	err = h.db.Transaction(func(tx *gorm.DB) error {
+		freeCount := 1
+		if req.FreeEpisodesCount != nil {
+			freeCount = *req.FreeEpisodesCount
+			if freeCount < 0 {
+				freeCount = 0
+			}
+		}
+
 		newAudio = domain.Audio{
 			YoutubeVideoID:       videoID,
 			YoutubeURL:           fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID),
 			Title:                meta.Title,
 			Author:               meta.Author,
+			Description:          meta.Description,
 			ThumbnailURL:         meta.ThumbnailURL,
 			TotalDurationSeconds: duration,
 			CategoryID:           req.CategoryID,
 			Status:               domain.StatusActive,
 			IsVIPOnly:            req.IsVIPOnly,
+			FreeEpisodesCount:    &freeCount,
 			CreatedBy:            currentUser.ID, // Ghi nhận ID người nhập
 		}
 
@@ -489,6 +502,7 @@ func (h *Handler) ImportYouTube(c *gin.Context) {
 		}
 		epDrafts := logic.ComputeLogicalEpisodes(newAudio.ID, duration, blockSize)
 		for _, draft := range epDrafts {
+			isVIP := req.IsVIPOnly && (draft.EpisodeNumber > freeCount || freeCount == 0)
 			ep := domain.Episode{
 				AudioID:         newAudio.ID,
 				EpisodeNumber:   draft.EpisodeNumber,
@@ -496,7 +510,7 @@ func (h *Handler) ImportYouTube(c *gin.Context) {
 				StartSeconds:    draft.StartSeconds,
 				EndSeconds:      draft.EndSeconds,
 				DurationSeconds: draft.DurationSeconds,
-				IsVIP:           req.IsVIPOnly,
+				IsVIP:           isVIP,
 			}
 			if err := tx.Create(&ep).Error; err != nil {
 				return err
@@ -594,13 +608,57 @@ func (h *Handler) UpdateAudio(c *gin.Context) {
 	}
 	if req.IsVIPOnly != nil {
 		updates["is_vip_only"] = *req.IsVIPOnly
-		// Đồng bộ trạng thái VIP vào toàn bộ các tập của audio
-		_ = h.db.Model(&domain.Episode{}).Where("audio_id = ?", audio.ID).Update("is_vip", *req.IsVIPOnly)
+	}
+	if req.FreeEpisodesCount != nil {
+		updates["free_episodes_count"] = *req.FreeEpisodesCount
 	}
 
-	if err := h.db.Model(&audio).Updates(updates).Error; err != nil {
-		response.Internal(c, "Không thể cập nhật Audio")
-		return
+	// Đồng bộ trạng thái VIP và số tập miễn phí của các tập
+	if req.IsVIPOnly != nil || req.FreeEpisodesCount != nil {
+		vipOnly := audio.IsVIPOnly
+		if req.IsVIPOnly != nil {
+			vipOnly = *req.IsVIPOnly
+		}
+		freeLimit := 1
+		if audio.FreeEpisodesCount != nil {
+			freeLimit = *audio.FreeEpisodesCount
+		}
+		if req.FreeEpisodesCount != nil {
+			freeLimit = *req.FreeEpisodesCount
+		}
+		if !vipOnly {
+			_ = h.db.Model(&domain.Episode{}).Where("audio_id = ?", audio.ID).Update("is_vip", false)
+		} else {
+			if freeLimit <= 0 {
+				_ = h.db.Model(&domain.Episode{}).Where("audio_id = ?", audio.ID).Update("is_vip", true)
+			} else {
+				_ = h.db.Model(&domain.Episode{}).Where("audio_id = ? AND episode_number <= ?", audio.ID, freeLimit).Update("is_vip", false)
+				_ = h.db.Model(&domain.Episode{}).Where("audio_id = ? AND episode_number > ?", audio.ID, freeLimit).Update("is_vip", true)
+			}
+		}
+	}
+
+	if len(updates) > 0 {
+		if err := h.db.Model(&audio).Updates(updates).Error; err != nil {
+			response.Internal(c, "Không thể cập nhật Audio")
+			return
+		}
+	}
+
+	// Cập nhật Tags nếu có truyền req.Tags
+	if req.Tags != nil {
+		var tagsToAdd []domain.Tag
+		for _, tagName := range req.Tags {
+			tagName = strings.TrimSpace(tagName)
+			if tagName == "" {
+				continue
+			}
+			var tag domain.Tag
+			slug := strings.ToLower(strings.ReplaceAll(tagName, " ", "-"))
+			h.db.Where(domain.Tag{Name: tagName}).Attrs(domain.Tag{Slug: slug}).FirstOrCreate(&tag)
+			tagsToAdd = append(tagsToAdd, tag)
+		}
+		_ = h.db.Model(&audio).Association("Tags").Replace(tagsToAdd)
 	}
 
 	h.db.Preload("Category").Preload("Tags").First(&audio, id)

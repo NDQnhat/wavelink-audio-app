@@ -1,8 +1,8 @@
-﻿import React from 'react';
+import React from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 
-export const Footer: React.FC = () => {
+export const Footer: React.FC = React.memo(() => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -82,5 +82,5 @@ export const Footer: React.FC = () => {
       </div>
     </nav>
   );
-};
+});
 
