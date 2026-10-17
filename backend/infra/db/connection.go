@@ -77,9 +77,19 @@ func InitDatabase(driver, source string, isProduction bool) (*gorm.DB, error) {
 		slog.Info(" Đã kích hoạt SQLite WAL mode và busy_timeout (5000ms)")
 	}
 
-	// Kiểm tra kết nối ping thực tế
-	if err := sqlDB.Ping(); err != nil {
-		return nil, fmt.Errorf("không thể ping cơ sở dữ liệu: %w", err)
+	// Kiểm tra kết nối ping thực tế với cơ chế Retry cho Cloud Database (Aiven/Render)
+	var pingErr error
+	maxRetries := 5
+	for i := 1; i <= maxRetries; i++ {
+		pingErr = sqlDB.Ping()
+		if pingErr == nil {
+			break
+		}
+		slog.Warn(fmt.Sprintf("Thử ping cơ sở dữ liệu lần %d/%d chưa sẵn sàng, đợi 3s...", i, maxRetries), "error", pingErr)
+		time.Sleep(3 * time.Second)
+	}
+	if pingErr != nil {
+		return nil, fmt.Errorf("không thể ping cơ sở dữ liệu sau %d lần thử: %w", maxRetries, pingErr)
 	}
 	slog.Info(" Kết nối cơ sở dữ liệu thành công", "driver", driver)
 
