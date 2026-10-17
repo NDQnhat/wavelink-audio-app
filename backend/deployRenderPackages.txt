@@ -1,3 +1,0 @@
-- deploy render với packages được docker hub trong github build sẵn phải có hook.
-+ tạo variable RENDER_DEPLOY_HOOK chứa key hook lấy từ Render.
-+ lấy key hook: vào setting -> tại mục Deploy Hook copy key

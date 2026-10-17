@@ -437,7 +437,7 @@ Khi Frontend chạy trên Vercel với `https://`, trình duyệt sẽ chặn g�
 Nếu bạn có sẵn hosting sinh viên/doanh nghiệp chạy DirectAdmin hoặc cPanel:
 1. File `.htaccess` đã được thiết lập sẵn trong `frontend/` để hỗ trợ SPA Routing.
 2. Thêm các Secret sau vào GitHub Repository:
-   - `FTP_SERVER`: Địa chỉ IP máy chủ FTP (ví dụ: `103.173.67.168`).
+   - `FTP_SERVER`: Địa chỉ IP máy chủ FTP (ví dụ: `[YOUR_FTP_SERVER_IP]`).
    - `FTP_USERNAME`: Tên người dùng FTP (ví dụ: `wavelink`).
    - `FTP_PASSWORD`: Mật khẩu FTP tương ứng.
 3. Khi bạn push commit vào nhánh `main`, GitHub Actions sẽ tự động biên dịch thư mục `frontend/dist/` và tải lên thư mục `public_html/` của hosting thông qua FTP.

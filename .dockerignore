@@ -10,3 +10,7 @@ backend/*.exe
 .env*
 !.env*.example
 start/__pycache__
+deploy/
+docs/
+*.txt
+!requirements.txt

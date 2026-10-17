@@ -1,0 +1,94 @@
+# ==============================================================================
+# WaveLink Audio App - Production LiteSpeed & Apache Configuration
+# - Hỗ trợ Single Page Application (SPA) Routing (React Router v6)
+# - Tránh xung đột điều hướng /student-login và các deep link
+# - Tối ưu bộ đệm Browser Caching cho Assets băm tên
+# - Tăng tốc nén Gzip / Brotli & Bảo mật HTTP Headers
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. THIẾT LẬP FILE MẶC ĐỊNH & TẮT DUYỆT THƯ MỤC
+# ------------------------------------------------------------------------------
+DirectoryIndex index.html index.php
+Options -Indexes -MultiViews
+
+# ------------------------------------------------------------------------------
+# 2. ĐIỀU HƯỚNG SPA REWRITE CHO REACT ROUTER
+# ------------------------------------------------------------------------------
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Bỏ qua index.html để tránh lặp
+  RewriteRule ^index\.html$ - [L]
+
+  # Bỏ qua nếu người dùng truy cập trực tiếp vào file hoặc thư mục vật lý có thật
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Chuyển hướng toàn bộ các đường dẫn ảo (như /student-login, /player/1) về index.html
+  RewriteRule . /index.html [L]
+</IfModule>
+
+# ------------------------------------------------------------------------------
+# 3. TỐI ƯU HÓA BỘ NHỚ ĐỆM TRÌNH DUYỆT (BROWSER CACHING / EXPIRES)
+# ------------------------------------------------------------------------------
+<IfModule mod_expires.c>
+  ExpiresActive On
+
+  # Mặc định cache 1 giờ
+  ExpiresDefault "access plus 1 hour"
+
+  # HTML & Service Worker: KHÔNG CACHE để luôn nhận bản cập nhật mới nhất
+  ExpiresByType text/html "access plus 0 seconds"
+  ExpiresByType application/javascript "access plus 0 seconds"
+
+  # Static Assets có mã băm (Vite hash: /assets/*): Cache 1 năm bất biến
+  ExpiresByType text/css "access plus 1 year"
+  ExpiresByType application/x-javascript "access plus 1 year"
+  ExpiresByType font/ttf "access plus 1 year"
+  ExpiresByType font/woff "access plus 1 year"
+  ExpiresByType font/woff2 "access plus 1 year"
+  ExpiresByType image/png "access plus 1 year"
+  ExpiresByType image/jpeg "access plus 1 year"
+  ExpiresByType image/webp "access plus 1 year"
+  ExpiresByType image/svg+xml "access plus 1 year"
+  ExpiresByType image/x-icon "access plus 1 year"
+</IfModule>
+
+# ------------------------------------------------------------------------------
+# 4. KIỂM SOÁT HEADER CACHE-CONTROL
+# ------------------------------------------------------------------------------
+<IfModule mod_headers.c>
+  # Đảm bảo index.html và sw.js luôn được revalidate
+  <FilesMatch "\.(html|htm)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires 0
+  </FilesMatch>
+
+  <FilesMatch "^sw\.js$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+  </FilesMatch>
+
+  # Assets trong thư mục assets được cache lâu dài
+  <FilesMatch "\.(js|css|woff2|woff|ttf|png|jpg|jpeg|webp|svg)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+
+  # Các header bảo mật cơ bản
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# ------------------------------------------------------------------------------
+# 5. BẬT NÉN GZIP / BROTLI NẾU MÁY CHỦ HỖ TRỢ
+# ------------------------------------------------------------------------------
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/plain text/html text/xml text/css
+  AddOutputFilterByType DEFLATE application/xml application/xhtml+xml application/rss+xml
+  AddOutputFilterByType DEFLATE application/javascript application/x-javascript
+  AddOutputFilterByType DEFLATE application/json
+  AddOutputFilterByType DEFLATE image/svg+xml
+</IfModule>

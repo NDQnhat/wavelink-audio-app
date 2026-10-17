@@ -101,6 +101,9 @@ jobs:
 
       - name: Verify Production Vite Build (TypeScript + Minification)
         working-directory: frontend
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://wavelink-audio-app-backend-latest.onrender.com/api/v1' }}
+          VITE_ITEMS_PER_PAGE: 12
         run: npm run build
 
       - name: Upload Frontend Production Artifact
@@ -215,7 +218,7 @@ jobs:
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
           build-args: |
-            VITE_API_BASE_URL=/api/v1
+            VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL || 'https://wavelink-audio-app-backend-latest.onrender.com/api/v1' }}
             VITE_ITEMS_PER_PAGE=12
 
       - name: Trigger Render Auto-Deploy Hook
@@ -241,12 +244,36 @@ jobs:
             echo "enabled=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Download Frontend Production Artifact
+      # Chuyển sang chuẩn 100% "Trích xuất từ Docker Package GHCR"
+      - name: Extract Frontend Package from GHCR Docker Image
         if: steps.check_ftp.outputs.enabled == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist
+        run: |
+          echo ">>> Đang trích xuất static package từ Docker Image GHCR..."
+          rm -rf ./frontend/dist-extracted
+          mkdir -p ./frontend/dist-extracted
+          # Khởi tạo container tạm thời từ Docker Image GHCR vừa đóng gói để copy static assets
+          docker create --name fe_pkg_extract ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_LOWER }}:latest
+          docker cp fe_pkg_extract:/usr/share/nginx/html/. ./frontend/dist-extracted/
+          docker rm fe_pkg_extract
+          # Đảm bảo file .htaccess điều hướng SPA luôn có mặt trong package deploy
+          cp ./frontend/public/.htaccess ./frontend/dist-extracted/.htaccess || true
+          echo ">>> Trích xuất thành công! Danh sách tệp tin trong package:"
+          ls -la ./frontend/dist-extracted/
+
+      - name: Resolve FTP Target Directory
+        if: steps.check_ftp.outputs.enabled == 'true'
+        id: ftp_dir
+        env:
+          FTP_SERVER_DIR: ${{ secrets.FTP_SERVER_DIR }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+        run: |
+          if [ -n "$FTP_SERVER_DIR" ]; then
+            echo "target_dir=$FTP_SERVER_DIR" >> $GITHUB_OUTPUT
+          elif [ "$FTP_USERNAME" = "wavelink" ]; then
+            echo "target_dir=./domains/wavelink-audio-app.zhost.education/public_html/" >> $GITHUB_OUTPUT
+          else
+            echo "target_dir=./public_html/" >> $GITHUB_OUTPUT
+          fi
 
       - name: Deploy via FTP (Optional DirectAdmin)
         if: steps.check_ftp.outputs.enabled == 'true'
@@ -256,8 +283,8 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./frontend/dist/
-          server-dir: ./public_html/
+          local-dir: ./frontend/dist-extracted/
+          server-dir: ${{ steps.ftp_dir.outputs.target_dir }}
           dangerous-clean-slate: false
 
       - name: Report CI/CD Status

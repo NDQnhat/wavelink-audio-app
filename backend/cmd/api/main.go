@@ -16,24 +16,47 @@ import (
 	"audio-app-backend/server"
 )
 
-// enableCORS bọc router để cấp phép CORS và xử lý Preflight (OPTIONS)
-func enableCORS(next http.Handler) http.Handler {
+// enableCORS bọc router để cấp phép CORS và xử lý Preflight (OPTIONS) cho cả zHost và Vercel
+func enableCORS(next http.Handler, allowedOrigins string) http.Handler {
+	origins := strings.Split(allowedOrigins, ",")
+	whitelist := make(map[string]bool)
+	wildcards := []string{".vercel.app", ".zhost.education"}
+	whitelist["https://wavelink-audio-app.vercel.app"] = true
+	whitelist["https://wavelink-audio-app.zhost.education"] = true
+	whitelist["http://wavelink-audio-app.zhost.education"] = true
+	whitelist["http://localhost:5173"] = true
+	whitelist["http://localhost:3000"] = true
+
+	for _, o := range origins {
+		trimmed := strings.TrimSpace(o)
+		if strings.HasPrefix(trimmed, "*.") {
+			wildcards = append(wildcards, strings.TrimPrefix(trimmed, "*"))
+		} else if trimmed != "" {
+			whitelist[trimmed] = true
+		}
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 
-		// Kiểm tra domain hợp lệ (Vercel production, preview deployments và localhost)
-		isAllowed := origin == "https://wavelink-audio-app.vercel.app" ||
-			origin == "http://localhost:5173" ||
-			origin == "http://localhost:3000" ||
-			strings.HasSuffix(origin, ".vercel.app")
+		isAllowed := whitelist[origin]
+		if !isAllowed && origin != "" {
+			for _, wc := range wildcards {
+				if strings.HasSuffix(origin, wc) {
+					isAllowed = true
+					break
+				}
+			}
+		}
 
 		if isAllowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Vary", "Origin")
 		}
 
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD")
-		w.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Requested-With")
+		w.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Requested-With, Cache-Control")
 
 		// Trình duyệt gửi request OPTIONS (Preflight) trước khi gửi Authorization header
 		if r.Method == http.MethodOptions {
@@ -76,7 +99,7 @@ func main() {
 	// 5. Khởi động HTTP Server với Graceful Shutdown (Bọc router qua enableCORS)
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      enableCORS(router),
+		Handler:      enableCORS(router, cfg.AllowedOrigins),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 20 * time.Second,
 		IdleTimeout:  60 * time.Second,

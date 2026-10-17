@@ -42,6 +42,15 @@ env.*
 !**/*.example
 *.pem
 env/
+deploy/env/*.env
+deploy/env/*.txt
+deploy/env/wavelink-audio-app-render.env
+deploy/*.txt
+backend/*.txt
+frontend/*.txt
+*.txt
+!requirements.txt
+deploy/material.md
 
 # Python caches
 __pycache__/

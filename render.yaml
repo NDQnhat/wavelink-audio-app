@@ -24,7 +24,7 @@ services:
       - key: JWT_SECRET
         generateValue: true # Render tự động sinh chuỗi secret ngẫu nhiên bảo mật cao
       - key: ALLOWED_ORIGINS
-        value: "https://*.vercel.app,http://localhost:5173"
+        value: "https://wavelink-audio-app.zhost.education,https://*.vercel.app,https://wavelink-audio-app.vercel.app,http://localhost:5173"
       - key: EPISODE_BLOCK_SECONDS
         value: "14400"
       - key: DB_MAX_OPEN_CONNS

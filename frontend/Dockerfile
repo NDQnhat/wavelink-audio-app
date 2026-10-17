@@ -15,7 +15,7 @@ RUN npm ci || npm install
 COPY . .
 
 # Hỗ trợ truyền dynamic API URL và các cấu hình phân trang khi build Docker image
-ARG VITE_API_BASE_URL="/api/v1"
+ARG VITE_API_BASE_URL="https://wavelink-audio-app-backend-latest.onrender.com/api/v1"
 ARG VITE_ITEMS_PER_PAGE="12"
 
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
