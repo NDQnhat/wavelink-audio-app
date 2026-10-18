@@ -152,8 +152,10 @@ interface PlayerState {
   sleepTimerMinutes: number | null;
   sleepTimerEndTimestamp: number | null;
   isSeeking: boolean;
+  isScreenLocked: boolean;
 
   // Actions
+  setScreenLocked: (locked: boolean) => void;
   play: (audio: AudioItem, episode?: Episode | null, seekSeconds?: number | null) => void;
   togglePlay: () => void;
   pause: () => void;
@@ -232,7 +234,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   sleepTimerMinutes: initialSleepTimer.minutes,
   sleepTimerEndTimestamp: initialSleepTimer.endTimestamp,
   isSeeking: false,
+  isScreenLocked: false,
 
+  setScreenLocked: (isScreenLocked: boolean) => set({ isScreenLocked }),
   setYtReady: (isYtReady: boolean) => set({ isYtReady }),
 
   setYtInstance: (instance: unknown, instanceId: string = 'yt-player-host') => {
@@ -662,6 +666,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentTime: currentPos,
       sleepTimerMinutes: null,
       sleepTimerEndTimestamp: null,
+      isScreenLocked: false,
     });
     updateMediaSession(false, null, null);
   },
@@ -700,6 +705,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       rateSyncStatus: 'synced',
       sleepTimerMinutes: null,
       sleepTimerEndTimestamp: null,
+      isScreenLocked: false,
     });
     updateMediaSession(false, null, null);
   },
@@ -772,6 +778,17 @@ function onWorkerMediaTick() {
       if (epPos >= 0) {
         currentPos = epPos;
         usePlayerStore.setState({ currentTime: epPos });
+      }
+    } catch {}
+  }
+
+  // Re-enforce playback rate on each worker tick to catch background rate resets
+  if (ytPlayerInstance && typeof ytPlayerInstance.getPlaybackRate === 'function') {
+    try {
+      const actualRate = ytPlayerInstance.getPlaybackRate();
+      const desiredRate = store.playbackRate || 1.0;
+      if (desiredRate !== 1.0 && Math.abs(actualRate - desiredRate) > 0.05) {
+        rateCoordinator.enforceRateWithRetries(desiredRate, 'worker_tick_rate_check');
       }
     } catch {}
   }

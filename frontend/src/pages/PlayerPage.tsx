@@ -43,6 +43,7 @@ export const PlayerPage: React.FC = () => {
     nextEpisode,
     setPlaybackRate,
     setSleepTimer,
+    setScreenLocked,
   } = usePlayerStore();
 
   const [isSpeedModalOpen, setIsSpeedModalOpen] = useState(false);
@@ -537,6 +538,15 @@ export const PlayerPage: React.FC = () => {
             title="Hẹn giờ tắt"
           >
             <i className="ri-moon-line text-base font-bold" />
+          </button>
+
+          {/* Screen Lock (Giữ màn hình / Khóa màn hình chống chạm) */}
+          <button
+            onClick={() => setScreenLocked(true)}
+            className="w-9 h-9 rounded-lg border-2 border-black bg-white text-gray-700 flex items-center justify-center shadow-comic-sm hover:bg-[#FFE600] hover:text-black active:translate-x-0.5 active:translate-y-0.5"
+            title="Giữ màn hình / Khóa màn hình (Tránh chạm nhầm)"
+          >
+            <i className="ri-lock-2-line text-base font-bold" />
           </button>
         </div>
       </div>
