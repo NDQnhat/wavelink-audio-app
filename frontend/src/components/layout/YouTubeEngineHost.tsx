@@ -100,8 +100,10 @@ export const YouTubeEngineHost: React.FC = () => {
               }
               const targetRate = usePlayerStore.getState().playbackRate || 1.0;
               const actualRate = playerRef.current?.getPlaybackRate?.();
-              if (targetRate !== 1.0 && actualRate !== targetRate) {
+              if (typeof actualRate === 'number' && Math.abs(actualRate - targetRate) > 0.05) {
                 rateCoordinator.enforceRateWithRetries(targetRate, 'video_playing_enforce');
+              } else if (targetRate !== 1.0) {
+                rateCoordinator.enforceRateWithRetries(targetRate, 'video_playing_enforce_safe');
               }
             } else if (state === window.YT?.PlayerState?.PAUSED) {
               const currentStore = usePlayerStore.getState();
@@ -135,6 +137,16 @@ export const YouTubeEngineHost: React.FC = () => {
                 }, 10000);
               } else {
                 usePlayerStore.setState({ isPlaying: false });
+              }
+            } else if (state === 3) { // BUFFERING
+              // YouTube thường reset playbackRate về 1.0 trong quá trình buffer / recover
+              const bufferRate = usePlayerStore.getState().playbackRate || 1.0;
+              if (bufferRate !== 1.0) {
+                setTimeout(() => {
+                  if (playerRef.current && usePlayerStore.getState().playbackRate === bufferRate) {
+                    rateCoordinator.enforceRateWithRetries(bufferRate, 'buffering_rate_enforce');
+                  }
+                }, 600);
               }
             } else if (state === window.YT?.PlayerState?.ENDED) {
               const currentStore = usePlayerStore.getState();
@@ -223,11 +235,14 @@ export const YouTubeEngineHost: React.FC = () => {
             }
           } catch {}
         }
-        // Chỉ cưỡng chế áp dụng lại tốc độ nếu thực sự bị lệch tốc độ
-        const currentYtRate = playerRef.current?.getPlaybackRate?.();
-        if (desiredRate !== 1.0 && currentYtRate !== desiredRate) {
-          rateCoordinator.enforceRateWithRetries(desiredRate, 'app_foreground_visibility');
-        }
+        // Enforce rate sau delay để YouTube player kịp recover từ background
+        setTimeout(() => {
+          const currentYtRate = playerRef.current?.getPlaybackRate?.();
+          const latestDesiredRate = usePlayerStore.getState().playbackRate || 1.0;
+          if (Math.abs((currentYtRate || 1.0) - latestDesiredRate) > 0.05 || latestDesiredRate !== 1.0) {
+            rateCoordinator.enforceRateWithRetries(latestDesiredRate, 'app_foreground_visibility_delayed');
+          }
+        }, 800);
       }
     };
 
@@ -254,10 +269,13 @@ export const YouTubeEngineHost: React.FC = () => {
           }
         } catch {}
       }
-      const currentYtRate = playerRef.current?.getPlaybackRate?.();
-      if (desiredRate !== 1.0 && currentYtRate !== desiredRate) {
-        rateCoordinator.enforceRateWithRetries(desiredRate, 'app_foreground_focus');
-      }
+      setTimeout(() => {
+        const currentYtRate = playerRef.current?.getPlaybackRate?.();
+        const latestDesiredRate = usePlayerStore.getState().playbackRate || 1.0;
+        if (Math.abs((currentYtRate || 1.0) - latestDesiredRate) > 0.05 || latestDesiredRate !== 1.0) {
+          rateCoordinator.enforceRateWithRetries(latestDesiredRate, 'app_foreground_focus_delayed');
+        }
+      }, 800);
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);

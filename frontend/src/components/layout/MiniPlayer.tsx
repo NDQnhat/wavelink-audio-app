@@ -16,6 +16,7 @@ export const MiniPlayer: React.FC = () => {
     togglePlay,
     skipSeconds,
     cycleSpeed,
+    setScreenLocked,
     close,
   } = usePlayerStore();
 
@@ -86,6 +87,18 @@ export const MiniPlayer: React.FC = () => {
         >
           {playbackRate}x
         </button>
+        {isPlaying && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setScreenLocked(true);
+            }}
+            className="w-8 h-8 rounded-lg border-2 border-black bg-white flex items-center justify-center text-black shadow-comic-sm hover:bg-[#FFE600] active:translate-x-0.5 active:translate-y-0.5"
+            title="Giữ màn hình / Khóa màn hình (Tránh chạm nhầm)"
+          >
+            <i className="ri-lock-2-line text-sm" />
+          </button>
+        )}
         <button
           onClick={(e) => {
             e.stopPropagation();
