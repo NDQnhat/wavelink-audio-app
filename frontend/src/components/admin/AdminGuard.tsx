@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { toast } from '@/components/ui/Toast';
 import { AdminOverviewSkeleton } from '@/components/common/Skeletons';
 
-export const AdminGuard: React.FC = () => {
+export const AdminGuard: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   const navigate = useNavigate();
   const { user, isLoading, isInitialized } = useAuthStore();
 
@@ -89,5 +89,5 @@ export const AdminGuard: React.FC = () => {
     );
   }
 
-  return <Outlet />;
+  return children ? <>{children}</> : <Outlet />;
 };
