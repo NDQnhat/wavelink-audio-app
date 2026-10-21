@@ -1,7 +1,8 @@
 import { MetadataRoute } from 'next';
 import { fetchServerAllAudios } from '@/lib/serverAudio';
+import { getSiteUrl } from '@/lib/siteConfig';
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://wavelink.app';
+const siteUrl = getSiteUrl();
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const audios = await fetchServerAllAudios();
