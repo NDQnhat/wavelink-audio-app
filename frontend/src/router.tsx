@@ -18,6 +18,7 @@ import { AdminCategoriesPage } from '@/pages/admin/AdminCategoriesPage';
 import { AdminAccountsPage } from '@/pages/admin/AdminAccountsPage';
 import { AdminVipPage } from '@/pages/admin/AdminVipPage';
 import { AdminCommunityPage } from '@/pages/admin/AdminCommunityPage';
+import { AdminGuard } from '@/components/admin/AdminGuard';
 
 export const AppRoutes: React.FC = () => {
   return (
@@ -37,14 +38,16 @@ export const AppRoutes: React.FC = () => {
         <Route path="/login" element={<AuthPage />} />
         <Route path="/register" element={<AuthPage />} />
 
-        {/* Admin Routes */}
-        <Route path="/admin" element={<AdminOverviewPage />} />
-        <Route path="/admin/audios" element={<AdminAudiosPage />} />
-        <Route path="/admin/episodes" element={<AdminEpisodesPage />} />
-        <Route path="/admin/categories" element={<AdminCategoriesPage />} />
-        <Route path="/admin/accounts" element={<AdminAccountsPage />} />
-        <Route path="/admin/vip" element={<AdminVipPage />} />
-        <Route path="/admin/community" element={<AdminCommunityPage />} />
+        {/* Admin Routes - Protected with AdminGuard */}
+        <Route element={<AdminGuard />}>
+          <Route path="/admin" element={<AdminOverviewPage />} />
+          <Route path="/admin/audios" element={<AdminAudiosPage />} />
+          <Route path="/admin/episodes" element={<AdminEpisodesPage />} />
+          <Route path="/admin/categories" element={<AdminCategoriesPage />} />
+          <Route path="/admin/accounts" element={<AdminAccountsPage />} />
+          <Route path="/admin/vip" element={<AdminVipPage />} />
+          <Route path="/admin/community" element={<AdminCommunityPage />} />
+        </Route>
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/home" replace />} />

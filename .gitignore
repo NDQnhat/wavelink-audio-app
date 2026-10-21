@@ -64,3 +64,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+
+# Next.js build outputs
+.next/
+frontend/.next/

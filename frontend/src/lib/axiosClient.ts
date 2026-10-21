@@ -1,12 +1,29 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-// Cấu hình URL Backend API linh hoạt theo biến môi trường VITE_API_BASE_URL, loại bỏ hoàn toàn hardcode domain
-export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
-  (typeof window !== 'undefined' && (window.location.port === '8080' || window.location.origin.includes('8080'))
-    ? '/api/v1'
-    : (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-      ? 'http://localhost:8080/api/v1'
-      : '/api/v1'));
+const resolveApiBase = (): string => {
+  if (typeof process !== 'undefined' && process.env) {
+    if (process.env.NEXT_PUBLIC_API_BASE_URL) return process.env.NEXT_PUBLIC_API_BASE_URL.trim();
+    if (process.env.VITE_API_BASE_URL) return process.env.VITE_API_BASE_URL.trim();
+    if (typeof window === 'undefined' && process.env.BACKEND_INTERNAL_URL) {
+      return `${process.env.BACKEND_INTERNAL_URL.trim()}/api/v1`;
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    if (window.location.port === '8080' || window.location.origin.includes('8080')) {
+      return '/api/v1';
+    }
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return 'http://localhost:8080/api/v1';
+    }
+    return '/api/v1';
+  }
+
+  return 'http://localhost:8080/api/v1';
+};
+
+// Cấu hình URL Backend API linh hoạt theo biến môi trường NEXT_PUBLIC_API_BASE_URL / VITE_API_BASE_URL
+export const API_BASE = resolveApiBase();
 
 export const axiosClient = axios.create({
   baseURL: API_BASE,
@@ -32,7 +49,7 @@ axiosClient.interceptors.request.use(
       } catch {}
     }
 
-    const token = localStorage.getItem('auth_token');
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
