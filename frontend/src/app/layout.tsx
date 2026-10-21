@@ -5,12 +5,17 @@ import '@/styles/globals.css';
 import { AppProviders } from './providers';
 import { ClientShell } from './client-shell';
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://wavelink.app';
+import { getSiteUrl } from '@/lib/siteConfig';
+
+const siteUrl = getSiteUrl();
 
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
+  verification: {
+    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || '',
+  },
   title: {
     default: 'WaveLink - Nền tảng nghe Audio từ YouTube, Chạy ngầm khi tắt màn hình',
     template: '%s | WaveLink Audio',

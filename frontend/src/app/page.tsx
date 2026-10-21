@@ -1,8 +1,9 @@
 import React from 'react';
 import type { Metadata } from 'next';
 import { HomePage } from '@/pages/HomePage';
+import { getSiteUrl } from '@/lib/siteConfig';
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://wavelink.app';
+const siteUrl = getSiteUrl();
 
 export const metadata: Metadata = {
   title: 'WaveLink - Nền Tảng Nghe Audio Từ Video YouTube Tắt Màn Hình',

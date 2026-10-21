@@ -1,9 +1,10 @@
 import React from 'react';
 import type { Metadata } from 'next';
 import { fetchServerAudio } from '@/lib/serverAudio';
+import { getSiteUrl } from '@/lib/siteConfig';
 import { PlayerClient } from './player-client';
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://wavelink.app';
+const siteUrl = getSiteUrl();
 
 interface PageProps {
   params: {
