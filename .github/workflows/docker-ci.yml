@@ -19,6 +19,7 @@ on:
       - 'feat/**'
       - 'fix/**'
       - 'auto/**'
+      - 'refactor/**'
     tags:
       - 'v*.*.*'
     paths-ignore:
