@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     WaveLink Shipping Tool - Tu dong tao nhanh moi, commit va push code len GitHub.
-    Sau do CI/CD se tu dong kiem dinh, merge vao main roi moi build Docker.
+    Sau do CI/CD se tu dong kiem dinh, merge vao preview (UAT) de test truoc khi len production.
 .EXAMPLE
     .\start\ship.ps1 -m "fix: cap nhat giao dien am nhac"
     .\start\ship.ps1 "feat: them tinh nang playlist"
@@ -34,14 +34,14 @@ if ([string]::IsNullOrWhiteSpace($Message)) {
     }
 }
 
-# 3. Kiem tra va tao nhanh moi neu dang o 'main'
+# 3. Kiem tra va tao nhanh moi neu dang o 'main' hoac 'preview'
 $currentBranch = (git branch --show-current).Trim()
 
 if ([string]::IsNullOrWhiteSpace($Branch)) {
-    if ($currentBranch -eq "main") {
+    if ($currentBranch -eq "main" -or $currentBranch -eq "preview") {
         $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
         $targetBranch = "auto/patch-$timestamp"
-        Write-Host "[*] Nhanh 'main' dang duoc bao ve (Protected Branch)." -ForegroundColor Cyan
+        Write-Host "[*] Nhanh '$currentBranch' dang duoc bao ve (Protected / Production / UAT)." -ForegroundColor Cyan
         Write-Host "[*] Tu dong tao nhanh moi de push: $targetBranch" -ForegroundColor Yellow
         git checkout -b $targetBranch
     } else {
@@ -70,7 +70,8 @@ Write-Host ""
 Write-Host "==========================================================================" -ForegroundColor Green
 Write-Host "  THANH CONG! Code da duoc day len nhanh: $targetBranch" -ForegroundColor Green
 Write-Host "  Quy trinh CI/CD tren GitHub Actions se tu dong chay:" -ForegroundColor Cyan
-Write-Host "  1. [Kiem dinh]: Chay Go Test & Lint + React Vitest & Vite Build" -ForegroundColor White
-Write-Host "  2. [Auto-Merge]: Tu dong merge vao nhanh 'main' khi kiem dinh thanh cong" -ForegroundColor White
-Write-Host "  3. [Docker Build]: Build Docker Backend & Frontend roi day len GHCR" -ForegroundColor White
+Write-Host "  1. [Kiem dinh]: Chay Go Test & Lint + React Vitest & Vite/Next Build" -ForegroundColor White
+Write-Host "  2. [Auto-Merge]: Tu dong merge vao nhanh 'preview' (UAT) khi kiem dinh PASS" -ForegroundColor White
+Write-Host "  3. [UAT Vercel]: Vercel Preview tu dong cap nhat ban build kiem thu" -ForegroundColor White
+Write-Host "  4. [Production]: Mo PR tu 'preview' vao 'main' de deploy len Web Hosting zHost" -ForegroundColor White
 Write-Host "==========================================================================" -ForegroundColor Green
