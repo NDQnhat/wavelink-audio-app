@@ -68,3 +68,4 @@ Thumbs.db
 # Next.js build outputs
 .next/
 frontend/.next/
+*.tsbuildinfo

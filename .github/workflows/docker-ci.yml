@@ -102,7 +102,7 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Run Vitest Suite (74 tests)
+      - name: Run Vitest Suite
         working-directory: frontend
         run: npm run test
 
@@ -111,6 +111,13 @@ jobs:
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://wavelink-audio-app-backend-latest.onrender.com/api/v1' }}
           VITE_ITEMS_PER_PAGE: 12
+        run: npm run build:vite
+
+      - name: Verify Production Next.js Build (SEO Layer)
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://wavelink-audio-app-backend-latest.onrender.com/api/v1' }}
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://wavelink-audio-app-backend-latest.onrender.com/api/v1' }}
         run: npm run build
 
       - name: Upload Frontend Production Artifact
