@@ -1,22 +1,51 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 const resolveApiBase = (): string => {
-  if (typeof process !== 'undefined' && process.env) {
-    if (process.env.NEXT_PUBLIC_API_BASE_URL) return process.env.NEXT_PUBLIC_API_BASE_URL.trim();
-    if (process.env.VITE_API_BASE_URL) return process.env.VITE_API_BASE_URL.trim();
-    if (typeof window === 'undefined' && process.env.BACKEND_INTERNAL_URL) {
-      return `${process.env.BACKEND_INTERNAL_URL.trim()}/api/v1`;
+  // 1. Runtime Config: Đọc cấu hình môi trường động từ window.__ENV__ (phục vụ Web Hosting zHost không hardcode URL)
+  if (typeof window !== 'undefined') {
+    const runtimeEnv = (window as unknown as { __ENV__?: { VITE_API_BASE_URL?: string; API_BASE_URL?: string } }).__ENV__;
+    const runtimeApi = runtimeEnv?.VITE_API_BASE_URL || runtimeEnv?.API_BASE_URL;
+    if (runtimeApi && runtimeApi.trim().length > 0) {
+      return runtimeApi.trim().replace(/\/+$/, '');
     }
   }
 
+  // 2. Phân định domain tự động (Đảm bảo Preview Vercel và Production Hosting tách biệt hoàn toàn, không xung đột)
   if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+
+    // A. Môi trường UAT / Preview trên Vercel: Luôn kết nối Backend Render Preview (Aiven MySQL)
+    if (hostname.includes('vercel.app')) {
+      return 'https://wavelink-audio-app-backend-latest.onrender.com/api/v1';
+    }
+
+    // B. Môi trường Production trên Web Hosting zHost: Kết nối Cloudflare Quick Tunnel của Home Server
+    if (hostname.includes('zhost.education')) {
+      return 'https://translations-draw-involves-jpg.trycloudflare.com/api/v1';
+    }
+
+    // C. Môi trường Cục bộ (Local Development)
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://localhost:8080/api/v1';
+    }
+
+    // D. Chạy trực tiếp trong container port 8080
     if (window.location.port === '8080' || window.location.origin.includes('8080')) {
       return '/api/v1';
     }
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      return 'http://localhost:8080/api/v1';
+  }
+
+  // 3. Build-time variables (Next.js SSR / Node build / Vite define)
+  if (typeof process !== 'undefined' && process.env) {
+    if (process.env.NEXT_PUBLIC_API_BASE_URL && process.env.NEXT_PUBLIC_API_BASE_URL.trim().length > 0) {
+      return process.env.NEXT_PUBLIC_API_BASE_URL.trim().replace(/\/+$/, '');
     }
-    return '/api/v1';
+    if (process.env.VITE_API_BASE_URL && process.env.VITE_API_BASE_URL.trim().length > 0) {
+      return process.env.VITE_API_BASE_URL.trim().replace(/\/+$/, '');
+    }
+    if (typeof window === 'undefined' && process.env.BACKEND_INTERNAL_URL) {
+      return `${process.env.BACKEND_INTERNAL_URL.trim().replace(/\/+$/, '')}/api/v1`;
+    }
   }
 
   return 'http://localhost:8080/api/v1';

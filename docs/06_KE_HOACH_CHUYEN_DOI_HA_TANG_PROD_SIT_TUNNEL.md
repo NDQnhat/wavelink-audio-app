@@ -269,6 +269,28 @@ Nếu máy chủ Ubuntu hoặc đường truyền mạng gặp sự cố nghiêm
 
 ---
 
+### 4.1. Cơ chế Runtime Environment Injection (env-config.js) trên Web Hosting
+
+Nhằm giải quyết triệt để vấn đề Quick Tunnel có URL động thay đổi khi khởi động lại mà **KHÔNG CẦN HARDCODE** hay build lại mã nguồn frontend:
+
+1. **Tệp cấu hình Runtime (`public/env-config.js`):**
+   - Được nạp độc lập tại thẻ `<head>` của `index.html` trước khi React bundle khởi chạy.
+   - Chứa cấu trúc:
+     ```javascript
+     window.__ENV__ = {
+       VITE_API_BASE_URL: "https://translations-draw-involves-jpg.trycloudflare.com/api/v1",
+       APP_ENV: "production"
+     };
+     ```
+   - Khi Cloudflare Quick Tunnel sinh URL mới trên Home Server, chỉ cần sửa dòng `VITE_API_BASE_URL` trong file `public_html/env-config.js` trên Hosting zHost. Trình duyệt F5 sẽ nhận ngay URL mới mà không cần chạm vào source code hay chờ CI/CD build lại.
+
+2. **Cơ chế Phân định Không Xung đột (Non-conflict Dual Environment Routing):**
+   - **Vercel Preview (`*.vercel.app`):** `resolveApiBase()` nhận diện domain Vercel $\rightarrow$ kết nối Backend Render Preview + Database Aiven MySQL.
+   - **Hosting Production (`*.zhost.education`):** Đọc trực tiếp từ `window.__ENV__.VITE_API_BASE_URL` $\rightarrow$ kết nối Home Server Backend qua Cloudflare Quick Tunnel + Database Native MySQL.
+   - **Localhost (`localhost:5173` / `3000`):** Kết nối cục bộ `http://localhost:8080/api/v1`.
+
+---
+
 ## 6. MA TRẬN BIẾN MÔI TRƯỜNG TOÀN HỆ THỐNG
 
 | Thông số cấu hình | SIT / Preview Environment | Production Environment |

@@ -398,6 +398,18 @@ jobs:
           docker rm fe_pkg_extract
           # Đảm bảo file .htaccess điều hướng SPA luôn có mặt trong package deploy
           cp ./frontend/public/.htaccess ./frontend/dist-extracted/.htaccess || true
+          # Đảm bảo file env-config.js cấu hình runtime cho Web Hosting luôn có mặt
+          cp ./frontend/public/env-config.js ./frontend/dist-extracted/env-config.js || true
+          if [ -n "${{ secrets.PROD_API_BASE_URL || secrets.QUICK_TUNNEL_URL }}" ]; then
+            TUNNEL_URL="${{ secrets.PROD_API_BASE_URL || secrets.QUICK_TUNNEL_URL }}"
+            echo ">>> Ghi đè URL API từ GitHub Secret vào env-config.js: $TUNNEL_URL"
+            cat << EOF > ./frontend/dist-extracted/env-config.js
+window.__ENV__ = {
+  VITE_API_BASE_URL: "${TUNNEL_URL}",
+  APP_ENV: "production"
+};
+EOF
+          fi
           echo ">>> Trích xuất thành công! Danh sách tệp tin trong package:"
           ls -la ./frontend/dist-extracted/
 
