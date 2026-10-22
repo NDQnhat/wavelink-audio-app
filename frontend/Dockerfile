@@ -22,7 +22,7 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
     VITE_ITEMS_PER_PAGE=$VITE_ITEMS_PER_PAGE 
 
 # Build React Vite
-RUN npm run build
+RUN npm run build:vite
 
 # ------------------------------------------------------------------------------
 # STAGE 2: High Performance Nginx Static Server
