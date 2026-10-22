@@ -389,6 +389,9 @@ jobs:
       # Trích xuất gói tĩnh SPA từ Docker GHCR để deploy lên Web Hosting zHost
       - name: Extract Frontend Package from GHCR Docker Image
         if: steps.check_ftp.outputs.enabled == 'true'
+        env:
+          PROD_API_URL: ${{ secrets.PROD_API_BASE_URL }}
+          TUNNEL_API_URL: ${{ secrets.QUICK_TUNNEL_URL }}
         run: |
           echo ">>> Đang trích xuất static package từ Docker Image GHCR..."
           rm -rf ./frontend/dist-extracted
@@ -400,15 +403,10 @@ jobs:
           cp ./frontend/public/.htaccess ./frontend/dist-extracted/.htaccess || true
           # Đảm bảo file env-config.js cấu hình runtime cho Web Hosting luôn có mặt
           cp ./frontend/public/env-config.js ./frontend/dist-extracted/env-config.js || true
-          if [ -n "${{ secrets.PROD_API_BASE_URL || secrets.QUICK_TUNNEL_URL }}" ]; then
-            TUNNEL_URL="${{ secrets.PROD_API_BASE_URL || secrets.QUICK_TUNNEL_URL }}"
-            echo ">>> Ghi đè URL API từ GitHub Secret vào env-config.js: $TUNNEL_URL"
-            cat << EOF > ./frontend/dist-extracted/env-config.js
-window.__ENV__ = {
-  VITE_API_BASE_URL: "${TUNNEL_URL}",
-  APP_ENV: "production"
-};
-EOF
+          RESOLVED_TUNNEL="${PROD_API_URL:-$TUNNEL_API_URL}"
+          if [ -n "$RESOLVED_TUNNEL" ]; then
+            echo ">>> Ghi đè URL API từ GitHub Secret vào env-config.js: $RESOLVED_TUNNEL"
+            printf 'window.__ENV__ = {\n  VITE_API_BASE_URL: "%s",\n  APP_ENV: "production"\n};\n' "$RESOLVED_TUNNEL" > ./frontend/dist-extracted/env-config.js
           fi
           echo ">>> Trích xuất thành công! Danh sách tệp tin trong package:"
           ls -la ./frontend/dist-extracted/
