@@ -1,11 +1,18 @@
 import { AudioItem } from '@/types';
 
 const getBackendUrl = () => {
-  if (process.env.BACKEND_INTERNAL_URL) {
-    return process.env.BACKEND_INTERNAL_URL.trim();
+  if (process.env.BACKEND_INTERNAL_URL && process.env.BACKEND_INTERNAL_URL.trim().length > 0) {
+    return process.env.BACKEND_INTERNAL_URL.trim().replace(/\/api\/v1\/?$/, '');
   }
-  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
-    return process.env.NEXT_PUBLIC_API_BASE_URL.replace(/\/api\/v1\/?$/, '');
+  if (process.env.NEXT_PUBLIC_API_BASE_URL && process.env.NEXT_PUBLIC_API_BASE_URL.trim().length > 0) {
+    return process.env.NEXT_PUBLIC_API_BASE_URL.trim().replace(/\/api\/v1\/?$/, '');
+  }
+  if (process.env.VITE_API_BASE_URL && process.env.VITE_API_BASE_URL.trim().length > 0) {
+    return process.env.VITE_API_BASE_URL.trim().replace(/\/api\/v1\/?$/, '');
+  }
+  // Môi trường Vercel Cloud: Luôn dùng Render Backend Preview
+  if (process.env.VERCEL) {
+    return 'https://wavelink-audio-app-backend-latest.onrender.com';
   }
   return 'http://localhost:8080';
 };

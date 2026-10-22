@@ -43,9 +43,20 @@ const resolveApiBase = (): string => {
     if (process.env.VITE_API_BASE_URL && process.env.VITE_API_BASE_URL.trim().length > 0) {
       return process.env.VITE_API_BASE_URL.trim().replace(/\/+$/, '');
     }
-    if (typeof window === 'undefined' && process.env.BACKEND_INTERNAL_URL) {
-      return `${process.env.BACKEND_INTERNAL_URL.trim().replace(/\/+$/, '')}/api/v1`;
+    if (typeof window === 'undefined') {
+      if (process.env.BACKEND_INTERNAL_URL && process.env.BACKEND_INTERNAL_URL.trim().length > 0) {
+        return `${process.env.BACKEND_INTERNAL_URL.trim().replace(/\/+$/, '')}/api/v1`;
+      }
+      // SSR trên môi trường Vercel: Mặc định trỏ về Render Backend Preview
+      if (process.env.VERCEL) {
+        return 'https://wavelink-audio-app-backend-latest.onrender.com/api/v1';
+      }
     }
+  }
+
+  // Fallback an toàn cho môi trường cloud Vercel
+  if (typeof process !== 'undefined' && process.env && process.env.VERCEL) {
+    return 'https://wavelink-audio-app-backend-latest.onrender.com/api/v1';
   }
 
   return 'http://localhost:8080/api/v1';
