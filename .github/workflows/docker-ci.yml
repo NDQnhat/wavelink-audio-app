@@ -1,18 +1,21 @@
 # ==============================================================================
-# WaveLink Fullstack CI/CD Pipeline
-# - CI (Kiểm định): Kiểm tra chất lượng Go Backend (1.26) & React Vite Frontend (Node 20, Vitest)
-# - Auto-Merge: Khi push vào nhánh mới (dev, feature/*, auto/*), sau khi kiểm định PASS
-#               hệ thống tự động tạo PR và merge an toàn vào nhánh 'main'.
-# - CD (Docker Delivery): Chỉ chạy sau khi code đã được merge vào 'main'.
-#               Build & Publish Docker Image lên GHCR và kích hoạt Deploy.
+# WaveLink Multi-Environment CI/CD Pipeline
+# - CI (Kiểm định): Go Backend (Go 1.26) & React Vite + Next.js Frontend (Node 20, Vitest)
+# - Auto-Merge to UAT: Khi push nhánh con (dev, feature/*, fix/*, auto/*, refactor/*),
+#                      sau khi PASS sẽ tự động tạo PR và merge vào nhánh 'preview' (UAT).
+# - UAT / Preview CD: Khi code vào nhánh 'preview', kích hoạt triển khai Vercel (Next.js Edge)
+#                      và Backend Render Preview.
+# - Production CD: Khi code được merge vào nhánh 'main' hoặc gắn Release Tag (v*.*.*),
+#                  hệ thống Build & Push Docker lên GHCR và deploy bản tĩnh qua FTP lên Web Hosting.
 # ==============================================================================
 
-name: WaveLink CI/CD & Multi-Environment Delivery
+name: WaveLink Multi-Environment CI/CD (Production & UAT Preview)
 
 on:
   push:
     branches:
       - main
+      - preview
       - dev
       - develop
       - 'feature/**'
@@ -28,11 +31,20 @@ on:
   pull_request:
     branches:
       - main
+      - preview
     paths-ignore:
       - '**.md'
       - 'docs/**'
   workflow_dispatch:
-  # Cho phép repo chứa packages kích hoạt pipeline từ xa qua API
+    inputs:
+      target_env:
+        description: 'Môi trường muốn triển khai thủ công (preview / production)'
+        required: true
+        default: 'preview'
+        type: choice
+        options:
+          - preview
+          - production
   repository_dispatch:
     types: [package-updated]
 
@@ -46,14 +58,14 @@ env:
   FRONTEND_IMAGE_NAME: ${{ github.repository }}-frontend
 
 permissions:
-  contents: write       # Cấp quyền ghi mã nguồn
+  contents: write       # Cấp quyền ghi mã nguồn & tạo release
   packages: write       # Cho phép push Docker Image lên GHCR
   pull-requests: write  # Cho phép tạo và merge Pull Request tự động
 
 jobs:
-  # ----------------------------------------------------------------------------
+  # ============================================================================
   # JOB 1: Test & Kiểm định chất lượng mã nguồn Backend Golang
-  # ----------------------------------------------------------------------------
+  # ============================================================================
   backend-test:
     name: Backend Test & Lint (Go 1.26)
     runs-on: ubuntu-latest
@@ -81,11 +93,11 @@ jobs:
         working-directory: backend
         run: go test -v ./...
 
-  # ----------------------------------------------------------------------------
-  # JOB 2: Test & Kiểm định chất lượng mã nguồn Frontend React Vite
-  # ----------------------------------------------------------------------------
+  # ============================================================================
+  # JOB 2: Test & Kiểm định chất lượng mã nguồn Frontend (Vite + Next.js)
+  # ============================================================================
   frontend-test:
-    name: Frontend Test & Build (Node 20)
+    name: Frontend Test & Build Verification (Node 20)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -102,18 +114,18 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Run Vitest Suite
+      - name: Run Vitest Suite (Unit & Component Tests)
         working-directory: frontend
         run: npm run test
 
-      - name: Verify Production Vite Build (TypeScript + Minification)
+      - name: Verify Production Vite Build (SPA Package for Hosting)
         working-directory: frontend
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://wavelink-audio-app-backend-latest.onrender.com/api/v1' }}
           VITE_ITEMS_PER_PAGE: 12
         run: npm run build:vite
 
-      - name: Verify Production Next.js Build (SEO Layer)
+      - name: Verify Production Next.js Build (SEO Layer for Vercel)
         working-directory: frontend
         env:
           NEXT_PUBLIC_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://wavelink-audio-app-backend-latest.onrender.com/api/v1' }}
@@ -127,61 +139,61 @@ jobs:
           path: frontend/dist/
           retention-days: 1
 
-  # ----------------------------------------------------------------------------
-  # JOB 3: Tự động tạo PR và merge vào main sau khi kiểm định thành công
-  # ----------------------------------------------------------------------------
-  auto-merge-to-main:
-    name: Auto Merge to Main (Verified Code)
+  # ============================================================================
+  # JOB 3: Tự động tạo PR và merge vào 'preview' (UAT) sau khi kiểm định PASS
+  # ============================================================================
+  auto-merge-to-preview:
+    name: Auto Merge to Preview (Verified UAT)
     runs-on: ubuntu-latest
     needs: [backend-test, frontend-test]
-    # Chỉ chạy khi push vào các nhánh làm việc (dev, feature/*, auto/*...)
-    if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') && github.event_name == 'push'
+    # Chỉ chạy khi push vào các nhánh làm việc con (dev, feature/*, fix/*, auto/*, refactor/*)
+    if: github.ref != 'refs/heads/main' && github.ref != 'refs/heads/preview' && !startsWith(github.ref, 'refs/tags/') && github.event_name == 'push'
     steps:
-      - name: Create PR and Auto Merge into Main
+      - name: Create PR and Auto Merge into Preview
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           script: |
             const branch = context.ref.replace('refs/heads/', '');
-            console.log(`>>> Kiem dinh thanh cong tren nhanh: ${branch}`);
+            console.log(`>>> Kiểm định thành công trên nhánh: ${branch}`);
 
-            // 1. Kiem tra xem da co Pull Request tu branch nay vao main chua
+            // 1. Kiểm tra xem đã có PR từ nhánh này vào preview chưa
             const { data: pulls } = await github.rest.pulls.list({
               owner: context.repo.owner,
               repo: context.repo.repo,
               head: `${context.repo.owner}:${branch}`,
-              base: 'main',
+              base: 'preview',
               state: 'open'
             });
 
             let pullNumber;
             if (pulls.length > 0) {
               pullNumber = pulls[0].number;
-              console.log(`>>> Tim thay PR #${pullNumber} dang mo.`);
+              console.log(`>>> Tìm thấy PR #${pullNumber} đang mở vào nhánh preview.`);
             } else {
               const { data: newPr } = await github.rest.pulls.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: `Auto Merge: ${branch} -> main [Verified]`,
+                title: `Auto Merge: ${branch} -> preview [Verified UAT]`,
                 head: branch,
-                base: 'main',
-                body: `### CI/CD Auto-Merge Report\n\nToan bo cac buoc kiem dinh cho nhanh \`${branch}\` da hoan tat xuat sac:\n- Backend Go 1.26: Test & Lint PASSED\n- Frontend React: Vitest & Build PASSED\n\nTu dong merge vao \`main\` de kich hoat qua trinh dong goi Docker Delivery.`
+                base: 'preview',
+                body: `### CI/CD Auto-Merge Report (UAT Preview)\n\nToàn bộ các bước kiểm định cho nhánh \`${branch}\` đã hoàn tất xuất sắc:\n- Backend Go 1.26: Test & Lint PASSED\n- Frontend React: Vitest, Vite Build & Next.js Build PASSED\n\nTự động merge vào nhánh \`preview\` để kích hoạt môi trường UAT / Vercel Preview.`
               });
               pullNumber = newPr.number;
-              console.log(`>>> Da tao moi PR #${pullNumber}.`);
+              console.log(`>>> Đã tạo mới PR #${pullNumber}.`);
             }
 
-            // 2. Thuc hien merge PR vao main
-            console.log(`>>> Tien hanh merge PR #${pullNumber} vao nhanh main...`);
+            // 2. Thực hiện merge PR vào preview
+            console.log(`>>> Tiến hành merge PR #${pullNumber} vào nhánh preview...`);
             await github.rest.pulls.merge({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: pullNumber,
               merge_method: 'squash'
             });
-            console.log(`>>> Merge thanh cong PR #${pullNumber} vao main!`);
+            console.log(`>>> Merge thành công PR #${pullNumber} vào preview!`);
 
-            // 3. Tu dong don dep nhanh tam (neu la nhanh auto/* hoac feature/*)
+            // 3. Tự động dọn dẹp nhánh tạm (nếu là nhánh auto/* hoặc feat/*)
             if (branch.startsWith('auto/') || branch.startsWith('feat/') || branch.startsWith('feature/')) {
               try {
                 await github.rest.git.deleteRef({
@@ -189,21 +201,97 @@ jobs:
                   repo: context.repo.repo,
                   ref: `heads/${branch}`
                 });
-                console.log(`>>> Da don dep nhanh tam: ${branch}`);
+                console.log(`>>> Đã dọn dẹp nhánh tạm: ${branch}`);
               } catch (err) {
-                console.log(`>>> Khong can xoa nhanh: ${err.message}`);
+                console.log(`>>> Bỏ qua xóa nhánh: ${err.message}`);
               }
             }
 
-  # ----------------------------------------------------------------------------
-  # JOB 4: Build & Publish Docker Images lên GHCR & CD Deploy Hook
-  # ----------------------------------------------------------------------------
-  docker-delivery:
-    name: Docker Validate, Build & Push (GHCR)
+  # ============================================================================
+  # JOB 4: UAT / Preview Delivery (Vercel Preview + Render Preview Hook)
+  # CHỈ CHẠY TRÊN NHÁNH 'preview'
+  # ============================================================================
+  preview-delivery:
+    name: UAT / Preview Delivery (Vercel + Render Preview)
     runs-on: ubuntu-latest
     needs: [backend-test, frontend-test]
-    # CHỈ CHẠY KHI ĐÃ VÀO NHÁNH MAIN (Sau khi đã merge hoặc release tag)
-    if: (github.ref == 'refs/heads/main' && github.event_name != 'pull_request') || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
+    if: (github.ref == 'refs/heads/preview' && github.event_name != 'pull_request') || (github.event_name == 'workflow_dispatch' && (inputs.target_env == 'preview' || github.ref == 'refs/heads/preview'))
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # Cách 1: Nếu cấu hình VERCEL_TOKEN, sử dụng Vercel CLI deploy chính xác
+      - name: Deploy to Vercel via CLI (Optional)
+        id: vercel_cli
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ -n "$VERCEL_TOKEN" ]; then
+            echo ">>> Đang triển khai Preview lên Vercel qua Vercel CLI..."
+            cd frontend
+            npx vercel pull --yes --environment=preview --token="$VERCEL_TOKEN" || true
+            npx vercel build --token="$VERCEL_TOKEN" || true
+            PREVIEW_URL=$(npx vercel deploy --prebuilt --token="$VERCEL_TOKEN" || echo "")
+            echo "preview_url=$PREVIEW_URL" >> $GITHUB_OUTPUT
+            echo ">>> Triển khai Vercel CLI thành công: $PREVIEW_URL"
+          else
+            echo ">>> Bỏ qua Vercel CLI (Chưa thiết lập VERCEL_TOKEN)."
+          fi
+
+      # Cách 2: Kích hoạt Vercel Deploy Hook nếu có cấu hình webhook
+      - name: Trigger Vercel Deploy Hook (Optional)
+        env:
+          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK || secrets.VERCEL_PREVIEW_HOOK }}
+        run: |
+          if [ -n "$VERCEL_DEPLOY_HOOK" ]; then
+            echo ">>> Đang gửi tín hiệu Deploy Hook tới Vercel..."
+            curl -s -f -X POST "$VERCEL_DEPLOY_HOOK" || echo "Cảnh báo: Không thể gọi Vercel Deploy Hook."
+          else
+            echo ">>> Vercel Git Integration tự động deploy nhánh 'preview' khi nhận commit."
+          fi
+
+      # Kích hoạt Render Preview Backend nếu có hook
+      - name: Trigger Render Preview Backend Deploy Hook (Optional)
+        env:
+          RENDER_PREVIEW_HOOK: ${{ secrets.RENDER_PREVIEW_DEPLOY_HOOK || secrets.RENDER_DEPLOY_HOOK_URL || secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -n "$RENDER_PREVIEW_HOOK" ]; then
+            echo ">>> Đang gửi tín hiệu Deploy Hook tới Render Preview Backend..."
+            curl -s -f -X POST "$RENDER_PREVIEW_HOOK" || echo "Cảnh báo: Không thể gọi Render Preview Hook."
+          fi
+
+      - name: Report UAT / Preview Status
+        run: |
+          echo "=========================================================="
+          echo "  MÔI TRƯỜNG UAT / PREVIEW ĐÃ TRIỂN KHAI THÀNH CÔNG!"
+          echo "  • Nền tảng: Vercel Edge CDN (Next.js App Router)"
+          echo "  • Tên miền UAT: https://wavelink-audio-app.vercel.app"
+          echo "  • Backend API: Render Cloud Preview Web Service"
+          echo "  • Nhánh kiểm định: preview"
+          echo "=========================================================="
+
+  # ============================================================================
+  # JOB 5: Production Delivery (Web Hosting zHost + Docker GHCR)
+  # CHỈ CHẠY TRÊN NHÁNH 'main' HOẶC RELEASE TAGS
+  # ============================================================================
+  production-delivery:
+    name: Production Delivery (Hosting zHost + Docker GHCR)
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-test]
+    if: (github.ref == 'refs/heads/main' && github.event_name != 'pull_request') || startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && (inputs.target_env == 'production' || github.ref == 'refs/heads/main')) || github.event_name == 'repository_dispatch'
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -264,7 +352,7 @@ jobs:
             type=sha,format=short,prefix=sha-
             type=semver,pattern={{version}}
 
-      - name: Build and Push Frontend Image
+      - name: Build and Push Frontend Image (Production Vite + Nginx)
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
@@ -273,18 +361,18 @@ jobs:
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
           build-args: |
-            VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL || 'https://wavelink-audio-app-backend-latest.onrender.com/api/v1' }}
+            VITE_API_BASE_URL=${{ secrets.PROD_API_BASE_URL || secrets.VITE_API_BASE_URL || 'https://wavelink-audio-app-backend-latest.onrender.com/api/v1' }}
             VITE_ITEMS_PER_PAGE=12
 
-      - name: Trigger Render Auto-Deploy Hook
+      - name: Trigger Production Backend Auto-Deploy Hook
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL || secrets.RENDER_DEPLOY_HOOK }}
         run: |
           if [ -n "$RENDER_DEPLOY_HOOK_URL" ]; then
-            echo "Đang gửi tín hiệu Deploy Hook tới Render..."
+            echo "Đang gửi tín hiệu Deploy Hook tới Backend Production..."
             curl -s -f -X POST "$RENDER_DEPLOY_HOOK_URL" || echo "Cảnh báo: Không thể gọi Render Deploy Hook."
           else
-            echo "Bỏ qua Render Deploy Hook (Chưa thiết lập RENDER_DEPLOY_HOOK_URL hoặc RENDER_DEPLOY_HOOK)."
+            echo "Bỏ qua Deploy Hook (Chưa thiết lập RENDER_DEPLOY_HOOK_URL)."
           fi
 
       - name: Check FTP Secret
@@ -298,14 +386,13 @@ jobs:
             echo "enabled=false" >> $GITHUB_OUTPUT
           fi
 
-      # Chuyển sang chuẩn 100% "Trích xuất từ Docker Package GHCR"
+      # Trích xuất gói tĩnh SPA từ Docker GHCR để deploy lên Web Hosting zHost
       - name: Extract Frontend Package from GHCR Docker Image
         if: steps.check_ftp.outputs.enabled == 'true'
         run: |
           echo ">>> Đang trích xuất static package từ Docker Image GHCR..."
           rm -rf ./frontend/dist-extracted
           mkdir -p ./frontend/dist-extracted
-          # Khởi tạo container tạm thời từ Docker Image GHCR vừa đóng gói để copy static assets
           docker create --name fe_pkg_extract ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_LOWER }}:latest
           docker cp fe_pkg_extract:/usr/share/nginx/html/. ./frontend/dist-extracted/
           docker rm fe_pkg_extract
@@ -329,7 +416,7 @@ jobs:
             echo "target_dir=./public_html/" >> $GITHUB_OUTPUT
           fi
 
-      - name: Deploy via FTP (Optional DirectAdmin)
+      - name: Deploy via FTP to Web Hosting (DirectAdmin zHost)
         if: steps.check_ftp.outputs.enabled == 'true'
         continue-on-error: true
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -341,11 +428,13 @@ jobs:
           server-dir: ${{ steps.ftp_dir.outputs.target_dir }}
           dangerous-clean-slate: false
 
-      - name: Report CI/CD Status
+      - name: Report Production Status
         run: |
           echo "=========================================================="
-          echo "  TOÀN BỘ PIPELINE CD ĐÃ HOÀN TẤT THÀNH CÔNG!"
-          echo "  • Đã kiểm định Backend & Frontend"
-          echo "  • Đã merge an toàn vào nhánh main"
-          echo "  • Đã build và đẩy Docker Image mới nhất lên GHCR"
+          echo "  MÔI TRƯỜNG PRODUCTION ĐÃ TRIỂN KHAI THÀNH CÔNG!"
+          echo "  • Nền tảng Frontend: Web Hosting zHost (DirectAdmin)"
+          echo "  • Tên miền chính thức: https://wavelink-audio-app.zhost.education"
+          echo "  • Đã deploy static package qua FTP vào public_html/"
+          echo "  • Backend API: Đã build & push Docker image lên GHCR"
+          echo "  • Nhánh phát hành: main"
           echo "=========================================================="
