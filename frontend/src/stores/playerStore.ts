@@ -260,7 +260,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         player.loadVideoById({
           videoId: state.currentAudio.youtubeVideoId,
           startSeconds: startSec,
+          suggestedQuality: 'tiny',
         });
+        if (typeof player.setPlaybackQuality === 'function') {
+          try {
+            player.setPlaybackQuality('tiny');
+          } catch {}
+        }
         player.playVideo();
       } catch (err) {
         console.warn('Error loading pending video on yt ready:', err);
@@ -376,7 +382,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         ytPlayerInstance.loadVideoById({
           videoId: audio.youtubeVideoId,
           startSeconds: absoluteStart,
+          suggestedQuality: 'tiny',
         });
+        if (typeof ytPlayerInstance.setPlaybackQuality === 'function') {
+          try {
+            ytPlayerInstance.setPlaybackQuality('tiny');
+          } catch {}
+        }
         ytPlayerInstance.playVideo();
       } catch (err) {
         console.warn('YouTube playVideo call error:', err);

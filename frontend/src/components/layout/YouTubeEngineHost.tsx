@@ -4,6 +4,14 @@ import { rateCoordinator } from '@/lib/playbackRateCoordinator';
 import { toast } from '@/components/ui/Toast';
 import { startBackgroundAudio, stopBackgroundAudio } from '@/lib/backgroundAudioKeeper';
 
+const enforceLowestQuality = (player: any) => {
+  try {
+    if (player && typeof player.setPlaybackQuality === 'function') {
+      player.setPlaybackQuality('tiny');
+    }
+  } catch {}
+};
+
 export const YouTubeEngineHost: React.FC = () => {
   const setYtInstance = usePlayerStore((s) => s.setYtInstance);
   const handleEpisodeComplete = usePlayerStore((s) => s.handleEpisodeComplete);
@@ -58,8 +66,8 @@ export const YouTubeEngineHost: React.FC = () => {
       isInitializingRef.current = true;
 
       const player = new window.YT.Player('yt-player-target', {
-        height: '240',
-        width: '320',
+        height: '144',
+        width: '256',
         host: 'https://www.youtube-nocookie.com',
         playerVars: {
           enablejsapi: 1,
@@ -76,6 +84,7 @@ export const YouTubeEngineHost: React.FC = () => {
           onReady: () => {
             playerRef.current = player;
             setYtInstance(player, instanceId);
+            enforceLowestQuality(player);
             const targetRate = usePlayerStore.getState().playbackRate || 1.0;
             if (targetRate !== 1.0) {
               rateCoordinator.enforceRateWithRetries(targetRate, 'player_onReady_restore');
@@ -94,6 +103,7 @@ export const YouTubeEngineHost: React.FC = () => {
             const stateName = stateNames[state] || 'UNKNOWN';
 
             if (state === window.YT?.PlayerState?.PLAYING) {
+              enforceLowestQuality(playerRef.current);
               usePlayerStore.setState({ isPlaying: true, isSeeking: false });
               if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
                 navigator.mediaSession.playbackState = 'playing';
@@ -303,15 +313,17 @@ export const YouTubeEngineHost: React.FC = () => {
   return (
     <div
       id="yt-audio-host-container"
+      aria-hidden="true"
       style={{
         position: 'fixed',
-        top: '-9999px',
-        left: '-9999px',
-        width: '320px',
-        height: '240px',
-        opacity: 1,
+        bottom: 0,
+        right: 0,
+        width: '2px',
+        height: '2px',
+        overflow: 'hidden',
+        opacity: 0.01,
         pointerEvents: 'none',
-        zIndex: 0,
+        zIndex: -1,
       }}
     >
       <div id="yt-player-target" />
